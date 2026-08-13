@@ -88,6 +88,12 @@ const STATUS_CONFIG={
   not_given:{label:"Not Given",icon:"—",color:"#9898b0",bg:"#f4f4f8",border:"#c8c8d8"},
   absent:   {label:"Absent",   icon:"☁",color:"#a78bfa",bg:"#f3f0ff",border:"#a78bfa"},
 };
+const DEFAULT_MINUTE_OPTIONS=[
+  {id:"reading",label:"Reading"},
+  {id:"math",label:"Math"},
+  {id:"writing",label:"Writing"},
+  {id:"speech",label:"Speech"},
+];
 
 const getPal   = i => PALETTE[i%PALETTE.length];
 const getEmoji = n => EMOJIS[(n?.charCodeAt(0)??0)%EMOJIS.length];
@@ -503,6 +509,8 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
   const [newNote,setNewNote]=useState("");
   const [viewYear,setViewYear]=useState(currentYear);
   const [showQL,setShowQL]=useState(false); // quick log modal
+  const [selectedPointIndex,setSelectedPointIndex]=useState(null);
+  const [pointToDelete,setPointToDelete]=useState(null);
 
   // Derive available years from data
   const allPts=chart?.data??[];
@@ -545,6 +553,17 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
     setEditPt(null);
   };
 
+  const deletePointAtIndex=(indexToDelete)=>{
+    if(indexToDelete===null || indexToDelete===undefined || !chart || !Array.isArray(chart.data) || indexToDelete<0 || indexToDelete>=chart.data.length) return;
+    snap();
+    upd(d=>{
+      d[selSet].charts[selChart].data.splice(indexToDelete,1);
+      d[selSet].charts[selChart].data=sanitize(d[selSet].charts[selChart].data);
+    });
+    setSelectedPointIndex(null);
+    setPointToDelete(null);
+  };
+
   // Chart zones plugin (green/yellow/red bands)
   const goalVal = chart?.goalValue ?? 100;
   const chartBgPlugin = {
@@ -569,7 +588,10 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
   const chartData={
     datasets:[
       {label:chart?.name??"Progress",data:pts,borderColor:pal.chip,backgroundColor:pal.chip+"22",tension:0.35,fill:true,
-       pointRadius:pts.map(p=>p.notes?7:5),pointHoverRadius:9,pointBackgroundColor:pts.map(p=>p.notes?pal.chip:"#fff"),
+       pointRadius:pts.map(p=>{
+         const absIndex = allPts.indexOf(p);
+         return absIndex===selectedPointIndex ? 8 : p.notes ? 7 : 5;
+       }),pointHoverRadius:9,pointBackgroundColor:pts.map(p=>p.notes?pal.chip:"#fff"),
        pointBorderColor:pts.map(p=>p.notes?pal.chip:pal.chip),pointBorderWidth:pts.map(p=>p.notes?0:2),pointHitRadius:14},
       chart?.startDate&&chart?.goalDate&&{label:"🎯 Target",data:[{x:chart.startDate,y:chart.startValue},{x:chart.goalDate,y:chart.goalValue}],
         borderColor:"#52c97a",borderDash:[6,4],borderWidth:2,fill:false,pointRadius:4,pointBackgroundColor:"#52c97a"},
@@ -590,8 +612,11 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
       y:{min:0,max:100,grid:{color:"rgba(0,0,0,0.04)"},ticks:{color:"#9898b0",font:{family:"'Nunito'",size:11},callback:v=>v+"%"}},
     },
     onClick:(evt,els)=>{
-      if(!(evt?.native?.ctrlKey||evt?.native?.metaKey)) return;
-      if(els?.length&&window.confirm("Delete this point?")){snap();upd(d=>d[selSet].charts[selChart].data.splice(els[0].index,1));}
+      if(!els?.length) return;
+      const clickedPoint = pts[els[0].index];
+      if(!clickedPoint) return;
+      const absIndex = allPts.indexOf(clickedPoint);
+      setSelectedPointIndex(absIndex >= 0 ? absIndex : null);
     },
   };
 
@@ -634,9 +659,14 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
       )}
 
       <div style={{background:"var(--paper)",borderRadius:"var(--r-lg)",border:"2px solid var(--border)",padding:"16px",boxShadow:"var(--shadow-sm)"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,gap:10}}>
           <div style={{fontFamily:"var(--font-head)",fontWeight:800,fontSize:14}}>Progress Chart — {viewYear}</div>
-          <div style={{fontSize:11,color:"var(--ink-soft)"}}>Ctrl+click a point to delete · filled dot = has note</div>
+          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+            <div style={{fontSize:11,color:"var(--ink-soft)"}}>Click a point to select it · filled dot = has note</div>
+            {selectedPointIndex!==null&&(
+              <button className="ghost-btn" onClick={()=>setPointToDelete(selectedPointIndex)} style={{padding:"4px 10px",fontSize:11,color:"var(--red)"}}>Delete selected</button>
+            )}
+          </div>
         </div>
         <div style={{height:240}}>
           <Line ref={chartRef} data={chartData} options={chartOpts} plugins={[chartBgPlugin]}/>
@@ -648,6 +678,11 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
             </div>
           ))}
         </div>
+      </div>
+
+      <div style={{background:"var(--yellow-lt)",borderRadius:"var(--r-lg)",border:"2px solid #ffd166",padding:"16px",boxShadow:"var(--shadow-sm)"}}>
+        <div style={{fontFamily:"var(--font-head)",fontWeight:800,fontSize:13,marginBottom:8,color:"#9a6a00"}}>🗒 Goal Notes</div>
+        <textarea value={chart.notes} onChange={e=>upd(d=>d[selSet].charts[selChart].notes=e.target.value)} placeholder="Strategies, parent notes, observations…" style={{resize:"none",height:80,fontSize:13,background:"rgba(255,255,255,.6)",border:"1.5px solid #ffd16699"}}/>
       </div>
 
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
@@ -689,17 +724,24 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
                       {pt.notes&&<div style={{fontSize:11,color:"var(--ink-soft)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{pt.notes}</div>}
                     </div>
                     <button className="ghost-btn" onClick={()=>setEditPt({idx:allPts.indexOf(pt),x:pt.x,y:pt.y,notes:pt.notes||""})} style={{padding:"3px 8px",fontSize:11}}>Edit</button>
+                    <button className="ghost-btn" onClick={()=>setPointToDelete(allPts.indexOf(pt))} style={{padding:"3px 8px",fontSize:11,color:"var(--red)"}}>Delete</button>
                   </div>
                 );
               })}
             </div>
           </div>
-          <div style={{background:"var(--yellow-lt)",borderRadius:"var(--r-lg)",border:"2px solid #ffd166",padding:"16px",boxShadow:"var(--shadow-sm)"}}>
-            <div style={{fontFamily:"var(--font-head)",fontWeight:800,fontSize:13,marginBottom:8,color:"#9a6a00"}}>🗒 Goal Notes</div>
-            <textarea value={chart.notes} onChange={e=>upd(d=>d[selSet].charts[selChart].notes=e.target.value)} placeholder="Strategies, parent notes, observations…" style={{resize:"none",height:80,fontSize:13,background:"rgba(255,255,255,.6)",border:"1.5px solid #ffd16699"}}/>
-          </div>
         </div>
       </div>
+
+      <Modal show={pointToDelete!==null} onClose={()=>setPointToDelete(null)} title="Delete point?" emoji="⚠️">
+        <div style={{display:"flex",flexDirection:"column",gap:14}}>
+          <div style={{fontSize:14,color:"var(--ink-mid)",lineHeight:1.5}}>This will remove the selected data point from this goal.</div>
+          <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+            <button className="ghost-btn" onClick={()=>setPointToDelete(null)}>Cancel</button>
+            <button className="action-btn" onClick={()=>deletePointAtIndex(pointToDelete)} style={{background:"var(--red)",color:"#fff"}}>Delete</button>
+          </div>
+        </div>
+      </Modal>
 
       {/* Quick Log Modal */}
       <Modal show={showQL} onClose={()=>setShowQL(false)} title="Quick Log" emoji="⚡">
@@ -744,12 +786,142 @@ function QuickLogForm({pal,onSave}){
   );
 }
 
+function MinutesTab({student, selSet, upd, minuteOptions, requestConfirm}){
+  const [selectedOptionId,setSelectedOptionId]=useState(minuteOptions[0]?.id ?? "");
+  const [minutesValue,setMinutesValue]=useState("30");
+  const [editingId,setEditingId]=useState(null);
+  const entries=Array.isArray(student.minutes)?[...student.minutes]:[];
+
+  useEffect(()=>{
+    if(!minuteOptions.some(option=>option.id===selectedOptionId) && minuteOptions[0]){
+      setSelectedOptionId(minuteOptions[0].id);
+    }
+  },[minuteOptions,selectedOptionId]);
+
+  const selectedOption = minuteOptions.find(option => option.id === selectedOptionId) ?? null;
+
+  const saveEntry=()=>{
+    const rawMinutes = String(minutesValue ?? "").trim();
+    const effectiveMinutes = rawMinutes === "" ? "30" : rawMinutes;
+    const amount = Number(effectiveMinutes);
+    if(!selectedOption || !Number.isFinite(amount) || amount <= 0) return;
+
+    const payload = { id: editingId ?? `${Date.now()}-${Math.random().toString(16).slice(2,8)}`, optionId: selectedOption.id, label: selectedOption.label, amount };
+
+    upd(d=>{
+      if(!Array.isArray(d[selSet].minutes)) d[selSet].minutes=[];
+
+      if(editingId){
+        d[selSet].minutes = d[selSet].minutes.map(item => item.id === editingId ? { ...item, ...payload } : item);
+        return;
+      }
+
+      const existingEntry = d[selSet].minutes.find(item => item.optionId === selectedOption.id);
+      if(existingEntry){
+        requestConfirm({
+          title: `Replace ${selectedOption.label}?`,
+          message: `"${selectedOption.label}" already exists for this student. Replace the current ${existingEntry.amount} minutes with ${amount}?`,
+          confirmLabel: "Replace",
+          onConfirm: () => {
+            upd(inner => {
+              inner[selSet].minutes = (inner[selSet].minutes ?? []).map(item =>
+                item.id === existingEntry.id ? { ...item, ...payload } : item
+              );
+            });
+            setMinutesValue("30");
+            setEditingId(null);
+            setSelectedOptionId(minuteOptions[0]?.id ?? "");
+          },
+        });
+        return;
+      }
+
+      d[selSet].minutes.push(payload);
+    });
+
+    setMinutesValue("30");
+    setEditingId(null);
+    setSelectedOptionId(minuteOptions[0]?.id ?? "");
+  };
+
+  const startEdit=(entry)=>{
+    setEditingId(entry.id);
+    setSelectedOptionId(entry.optionId);
+    setMinutesValue(String(entry.amount));
+  };
+
+  const cancelEdit=()=>{
+    setEditingId(null);
+    setMinutesValue("30");
+    setSelectedOptionId(minuteOptions[0]?.id ?? "");
+  };
+
+  return(
+    <div style={{flex:1,overflow:"auto",padding:"18px 22px",display:"flex",flexDirection:"column",gap:16}}>
+      <div style={{background:"var(--paper)",borderRadius:"var(--r-lg)",border:"2px solid var(--border)",padding:"18px",boxShadow:"var(--shadow-sm)"}}>
+        <div style={{fontFamily:"var(--font-head)",fontWeight:800,fontSize:14,marginBottom:12}}>
+          {editingId ? "✏️ Edit Minutes Entry" : "⏱ Add Minutes"}
+        </div>
+
+        {minuteOptions.length===0?(
+          <div style={{padding:"14px 0",textAlign:"center",color:"var(--ink-soft)",fontSize:13}}>
+            No minute options are set up yet. Add a global option from the site settings.
+          </div>
+        ):(
+          <div style={{display:"grid",gridTemplateColumns:"minmax(180px, 1.2fr) minmax(120px, .8fr) auto",gap:10,alignItems:"end"}}>
+            <div>
+              <SectionLabel>Category</SectionLabel>
+              <select value={selectedOptionId} onChange={e=>setSelectedOptionId(e.target.value)}>
+                {minuteOptions.map(option => (
+                  <option key={option.id} value={option.id}>{option.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <SectionLabel>Minutes</SectionLabel>
+              <input type="number" min={0} step={5} value={minutesValue} onChange={e=>setMinutesValue(e.target.value)} placeholder="30"/>
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              <button className="action-btn" onClick={saveEntry} style={{background:"var(--teal)",color:"#fff",padding:"10px 16px"}}>{editingId ? "Save" : "Add"}</button>
+              {editingId && <button className="ghost-btn" onClick={cancelEdit} style={{padding:"10px 12px"}}>Cancel</button>}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div style={{background:"var(--paper)",borderRadius:"var(--r-lg)",border:"2px solid var(--border)",padding:"18px",boxShadow:"var(--shadow-sm)"}}>
+        <div style={{fontFamily:"var(--font-head)",fontWeight:800,fontSize:14,marginBottom:12}}>📋 Minutes Added</div>
+        {entries.length===0?(
+          <div style={{textAlign:"center",padding:"20px 0",color:"var(--ink-soft)",fontSize:13}}>No minutes added for this student yet.</div>
+        ):(
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            {entries.map((entry,i)=>(
+              <div key={entry.id ?? i} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,padding:"12px 14px",borderRadius:10,background:"var(--cream)",border:"1.5px solid var(--border)"}}>
+                <div style={{display:"flex",alignItems:"center",gap:12,flex:1,minWidth:0}}>
+                  <div style={{minWidth:90,fontFamily:"var(--font-head)",fontWeight:800,color:"var(--ink)"}}>{entry.label || "Minutes"}</div>
+                  <div style={{fontFamily:"var(--font-head)",fontWeight:900,fontSize:18,color:"#26c6b0"}}>{entry.amount} min</div>
+                </div>
+                <div style={{display:"flex",gap:8}}>
+                  <button className="ghost-btn" onClick={()=>startEdit(entry)} style={{padding:"4px 8px",fontSize:11}}>Edit</button>
+                  <button className="ghost-btn" onClick={()=>upd(d=>d[selSet].minutes = (d[selSet].minutes ?? []).filter(item => item.id !== entry.id))} style={{padding:"4px 8px",fontSize:11}}>Delete</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Report Modal ─────────────────────────────────────────────────────────────
 function ReportModal({show,onClose,sets,selSet}){
   const student=sets[selSet];
   if(!show||!student) return null;
   const today=new Date().toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"});
   const pal=getPal(selSet);
+  const minuteEntries = Array.isArray(student.minutes) ? student.minutes : [];
+  const totalMinutes = minuteEntries.reduce((sum,entry)=>sum + Number(entry.amount || 0),0);
   return(
     <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(45,45,58,.35)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:300,backdropFilter:"blur(6px)"}}>
       <div onClick={e=>e.stopPropagation()} className="card-appear" style={{background:"var(--paper)",borderRadius:"var(--r-lg)",boxShadow:"var(--shadow-lg)",padding:36,width:"92%",maxWidth:680,maxHeight:"90vh",overflowY:"auto",border:"2px solid var(--border)"}}>
@@ -769,6 +941,18 @@ function ReportModal({show,onClose,sets,selSet}){
               <div style={{fontSize:13,color:"var(--ink-soft)",marginTop:3}}>Progress Report · Generated {today}</div>
             </div>
             <div style={{fontSize:28}}>{getEmoji(student.name)}</div>
+          </div>
+
+          <div style={{marginBottom:20,padding:"16px",background:"var(--cream)",borderRadius:"var(--r)",border:"1.5px solid var(--border)"}}>
+            <div style={{fontFamily:"var(--font-head)",fontWeight:800,fontSize:15,marginBottom:6}}>🕒 Minutes</div>
+            <div style={{fontSize:14,color:"var(--ink-mid)"}}>{minuteEntries.length ? `${totalMinutes} minutes total` : "No minutes recorded"}</div>
+            {minuteEntries.length>0&&(
+              <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:4}}>
+                {Object.entries(minuteEntries.reduce((acc,entry)=>{acc[entry.label || 'Other']=(acc[entry.label || 'Other']||0)+Number(entry.amount||0); return acc;},{})).map(([label,total])=>(
+                  <div key={label} style={{fontSize:12,color:"var(--ink-soft)"}}>{label}: {total} min</div>
+                ))}
+              </div>
+            )}
           </div>
 
           {student.charts.map((c,ci)=>{
@@ -817,13 +1001,19 @@ function ReportModal({show,onClose,sets,selSet}){
             );
           })}
 
-          {/* Accommodations summary */}
           {(student.accommodations??[]).length>0&&(
             <div style={{padding:"16px",background:"var(--cream)",borderRadius:"var(--r)",border:"1.5px solid var(--border)"}}>
               <div style={{fontFamily:"var(--font-head)",fontWeight:800,fontSize:15,marginBottom:10}}>🛠 Accommodations</div>
               {(student.accommodations??[]).map((a,i)=>(
                 <div key={i} style={{fontSize:13,padding:"4px 0",borderBottom:"1px dashed var(--border)"}}>{i+1}. {a.name}</div>
               ))}
+            </div>
+          )}
+
+          {(student.accommodations??[]).length===0&&(
+            <div style={{padding:"16px",background:"var(--cream)",borderRadius:"var(--r)",border:"1.5px solid var(--border)",color:"var(--ink-soft)"}}>
+              <div style={{fontFamily:"var(--font-head)",fontWeight:800,fontSize:15,marginBottom:4}}>🛠 Accommodations</div>
+              <div style={{fontSize:13}}>No accommodations currently recorded.</div>
             </div>
           )}
         </div>
@@ -837,9 +1027,16 @@ export default function App(){
   const [sets,setSets]=useState(()=>{
     try{
       const s=localStorage.getItem("pm_v2");
-      return s?JSON.parse(s):[{name:"Alex Johnson",collapsed:false,accommodations:[],accDays:{},
+      const parsed = s ? JSON.parse(s) : [{name:"Alex Johnson",collapsed:false,accommodations:[],accDays:{},minutes:[],
         charts:[{name:"Reading Fluency",startValue:40,startDate:"",goalValue:90,goalDate:"",data:[],notes:"",attachments:[]}]}];
-    }catch{return [];}
+      return Array.isArray(parsed) ? parsed.map(student => ({
+        ...student,
+        accommodations: Array.isArray(student.accommodations) ? student.accommodations : [],
+        accDays: student.accDays ?? {},
+        minutes: Array.isArray(student.minutes) ? student.minutes : [],
+        charts: Array.isArray(student.charts) ? student.charts : [],
+      })) : [];
+    } catch { return []; }
   });
 
   const [view,setView]=useState("dashboard"); // "dashboard" | "student"
@@ -853,9 +1050,20 @@ export default function App(){
   const [showAG,setShowAG]=useState(false);
   const [showReport,setShowReport]=useState(false);
   const [showShortcuts,setShowShortcuts]=useState(false);
+  const [showMinuteOptions,setShowMinuteOptions]=useState(false);
+  const [confirmDialog,setConfirmDialog]=useState(null);
+  const [renameTarget,setRenameTarget]=useState(null);
+  const [renameValue,setRenameValue]=useState("");
   const [newSName,setNewSName]=useState("");
   const [newGName,setNewGName]=useState("");
+  const [newMinuteOption,setNewMinuteOption]=useState("");
   const [showQL,setShowQL]=useState(false); // global quick log
+  const [minuteOptions,setMinuteOptions]=useState(()=>{
+    try{
+      const s=localStorage.getItem("pm_minute_options");
+      return s?JSON.parse(s):DEFAULT_MINUTE_OPTIONS;
+    }catch{return DEFAULT_MINUTE_OPTIONS;}
+  });
   const chartRef=useRef(null);
 
   const student=sets[selSet];
@@ -863,20 +1071,33 @@ export default function App(){
   const pal=getPal(selSet);
 
   useEffect(()=>{localStorage.setItem("pm_v2",JSON.stringify(sets));},[sets]);
+  useEffect(()=>{localStorage.setItem("pm_minute_options",JSON.stringify(minuteOptions));},[minuteOptions]);
 
   const snap=()=>setHistory(h=>{const n=[...h,JSON.stringify(sets)];if(n.length>20)n.shift();return n;});
   const undo=()=>{if(!history.length)return;setHistory(h=>h.slice(0,-1));setSets(JSON.parse(history[history.length-1]));};
   const upd=fn=>setSets(prev=>{const next=JSON.parse(JSON.stringify(prev));fn(next);return next;});
+  const requestConfirm=({title,message,confirmLabel="Confirm",onConfirm,danger=false})=>{
+    setConfirmDialog({title,message,confirmLabel,onConfirm,danger});
+  };
 
   const addStudent=()=>{
     if(!newSName.trim()) return;
-    upd(d=>d.push({name:newSName.trim(),collapsed:false,accommodations:[],accDays:{},charts:[]}));
+    upd(d=>d.push({name:newSName.trim(),collapsed:false,accommodations:[],accDays:{},minutes:[],charts:[]}));
     setSelSet(sets.length);setSelChart(0);setActiveTab("goals");setView("student");setNewSName("");setShowAS(false);
   };
   const addGoal=()=>{
     if(!newGName.trim()) return;
     upd(d=>d[selSet].charts.push({name:newGName.trim(),startValue:0,startDate:"",goalValue:100,goalDate:"",data:[],notes:"",attachments:[]}));
     setSelChart(student.charts.length);setNewGName("");setShowAG(false);
+  };
+  const addMinuteOption=()=>{
+    const label=newMinuteOption.trim();
+    if(!label) return;
+    setMinuteOptions(prev=>[...prev,{id:`opt-${Date.now()}-${Math.random().toString(16).slice(2,8)}`,label}]);
+    setNewMinuteOption("");
+  };
+  const removeMinuteOption=(id)=>{
+    setMinuteOptions(prev=>prev.filter(opt=>opt.id!==id));
   };
   const exportJSON=()=>{
     const a=document.createElement("a");
@@ -888,6 +1109,23 @@ export default function App(){
     const r=new FileReader();
     r.onload=ev=>{try{const d=JSON.parse(ev.target.result);if(Array.isArray(d)){setSets(d);setSelSet(0);setSelChart(0);setView("dashboard");}else alert("Invalid file");}catch{alert("Couldn't read that file");}};
     r.readAsText(f);
+  };
+  useEffect(()=>{
+    if(renameTarget){ setRenameValue(renameTarget.currentName ?? ""); }
+  },[renameTarget]);
+  const saveRename=()=>{
+    const nextName = renameValue.trim();
+    if(!renameTarget || !nextName) return;
+
+    if(renameTarget.type === "student"){
+      upd(d => { d[renameTarget.studentIndex].name = nextName; });
+    }
+    if(renameTarget.type === "goal"){
+      upd(d => { d[renameTarget.studentIndex].charts[renameTarget.goalIndex].name = nextName; });
+    }
+
+    setRenameTarget(null);
+    setRenameValue("");
   };
   const handleSelectStudent=si=>{setSelSet(si);setSelChart(0);setActiveTab("goals");setView("student");};
 
@@ -941,8 +1179,8 @@ export default function App(){
                       <div style={{fontSize:11,color:"var(--ink-soft)"}}>{s.charts.length} goal{s.charts.length!==1?"s":""}</div>
                     </div>
                     <div style={{display:"flex",gap:1}}>
-                      <button onClick={e=>{e.stopPropagation();const n=prompt("Name:",s.name);if(n)upd(d=>d[si].name=n);}} style={{background:"none",border:"none",cursor:"pointer",fontSize:12,opacity:.45,padding:"2px"}}>✏️</button>
-                      <button onClick={e=>{e.stopPropagation();if(window.confirm("Remove student?")){upd(d=>d.splice(si,1));setSelSet(0);setSelChart(0);setView("dashboard");}}} style={{background:"none",border:"none",cursor:"pointer",fontSize:12,opacity:.45,padding:"2px"}}>🗑️</button>
+                      <button onClick={e=>{e.stopPropagation();setRenameTarget({type:"student",studentIndex:si,currentName:s.name});}} style={{background:"none",border:"none",cursor:"pointer",fontSize:12,opacity:.45,padding:"2px"}}>✏️</button>
+                      <button onClick={e=>{e.stopPropagation();requestConfirm({title:"Remove student?",message:`This will delete ${s.name} and all of their data.`,confirmLabel:"Remove",danger:true,onConfirm:()=>{upd(d=>d.splice(si,1));setSelSet(0);setSelChart(0);setView("dashboard");setConfirmDialog(null);}});}} style={{background:"none",border:"none",cursor:"pointer",fontSize:12,opacity:.45,padding:"2px"}}>🗑️</button>
                     </div>
                   </div>
                   {isActive&&(
@@ -953,8 +1191,8 @@ export default function App(){
                           <div key={ci} onClick={()=>{setSelChart(ci);setActiveTab("goals");}} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"5px 10px",borderRadius:99,background:isAC?p.chip:"transparent",border:`1.5px solid ${isAC?p.chip:p.border+"55"}`,cursor:"pointer",transition:"all .15s"}}>
                             <span style={{fontFamily:"var(--font-head)",fontWeight:700,fontSize:12,color:isAC?"#fff":p.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1}}>{c.name}</span>
                             <div style={{display:"flex",gap:1}}>
-                              <button onClick={e=>{e.stopPropagation();const n=prompt("Goal:",c.name);if(n)upd(d=>d[si].charts[ci].name=n);}} style={{background:"none",border:"none",cursor:"pointer",fontSize:10,opacity:isAC?.75:.35,padding:"1px 2px",color:isAC?"#fff":"inherit"}}>✏️</button>
-                              <button onClick={e=>{e.stopPropagation();if(window.confirm("Delete goal?")){upd(d=>d[si].charts.splice(ci,1));setSelChart(0);}}} style={{background:"none",border:"none",cursor:"pointer",fontSize:10,opacity:isAC?.75:.35,padding:"1px 2px",color:isAC?"#fff":"inherit"}}>✕</button>
+                              <button onClick={e=>{e.stopPropagation();setRenameTarget({type:"goal",studentIndex:si,goalIndex:ci,currentName:c.name});}} style={{background:"none",border:"none",cursor:"pointer",fontSize:10,opacity:isAC?.75:.35,padding:"1px 2px",color:isAC?"#fff":"inherit"}}>✏️</button>
+                              <button onClick={e=>{e.stopPropagation();requestConfirm({title:"Delete goal?",message:`This will remove the goal "${c.name}" from this student.`,confirmLabel:"Delete",danger:true,onConfirm:()=>{upd(d=>d[si].charts.splice(ci,1));setSelChart(0);setConfirmDialog(null);}});}} style={{background:"none",border:"none",cursor:"pointer",fontSize:10,opacity:isAC?.75:.35,padding:"1px 2px",color:isAC?"#fff":"inherit"}}>✕</button>
                             </div>
                           </div>
                         );
@@ -970,6 +1208,7 @@ export default function App(){
 
         <div style={{padding:"12px",borderTop:"2px solid var(--border)",display:"flex",flexDirection:"column",gap:7}}>
           <button className="action-btn" onClick={()=>setShowAS(true)} style={{background:"var(--teal)",color:"#fff",justifyContent:"center",width:"100%"}}>+ Add Student</button>
+          <button className="ghost-btn" onClick={()=>setShowMinuteOptions(true)} style={{justifyContent:"center",fontSize:11}}>⏱ Minutes Options</button>
           <div style={{display:"flex",gap:6}}>
             <button className="ghost-btn" onClick={exportJSON} style={{flex:1,justifyContent:"center"}}>↓ Export</button>
             <label className="ghost-btn" style={{flex:1,justifyContent:"center",cursor:"pointer"}}>↑ Import<input type="file" accept=".json" onChange={importJSON} style={{display:"none"}}/></label>
@@ -1001,14 +1240,17 @@ export default function App(){
                   <button className="ghost-btn" onClick={()=>setShowReport(true)}>📄 Report</button>
                 </div>
               </div>
-              <div style={{display:"flex",gap:4,paddingBottom:12}}>
+              <div style={{display:"flex",gap:4,paddingBottom:12,flexWrap:"wrap"}}>
                 <button className={`tab-btn${activeTab==="goals"?" active":""}`} onClick={()=>setActiveTab("goals")}>📊 Goals</button>
                 <button className={`tab-btn${activeTab==="accommodations"?" active":""}`} onClick={()=>setActiveTab("accommodations")}>🛠 Accommodations</button>
+                <button className={`tab-btn${activeTab==="minutes"?" active":""}`} onClick={()=>setActiveTab("minutes")}>⏱ Minutes</button>
               </div>
             </div>
 
             {activeTab==="accommodations"?(
               <AccommodationsTab student={student} selSet={selSet} upd={upd}/>
+            ):activeTab==="minutes"?(
+              <MinutesTab student={student} selSet={selSet} upd={upd} minuteOptions={minuteOptions} requestConfirm={requestConfirm}/>
             ):(
               <GoalsTab sets={sets} selSet={selSet} selChart={selChart} setSelChart={setSelChart}
                 upd={upd} snap={snap} undo={undo} history={history}
@@ -1041,6 +1283,54 @@ export default function App(){
         <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
           <button className="ghost-btn" onClick={()=>setShowAG(false)}>Cancel</button>
           <button className="action-btn" onClick={addGoal} style={{background:pal.chip,color:"#fff"}}>Add Goal ✓</button>
+        </div>
+      </Modal>
+
+      <Modal show={showMinuteOptions} onClose={()=>setShowMinuteOptions(false)} title="Minutes Options" emoji="⏱">
+        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+          <div>
+            <SectionLabel>Add an option</SectionLabel>
+            <input type="text" placeholder="e.g. Small Group, Intervention, Reading" value={newMinuteOption} onChange={e=>setNewMinuteOption(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addMinuteOption()} style={{marginTop:6}} autoFocus/>
+          </div>
+          <div style={{display:"flex",justifyContent:"flex-end"}}>
+            <button className="action-btn" onClick={addMinuteOption} style={{background:"var(--teal)",color:"#fff"}}>Add Option</button>
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {minuteOptions.map(option=>(
+              <div key={option.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,padding:"8px 10px",background:"var(--cream)",borderRadius:8,border:"1.5px solid var(--border)"}}>
+                <span style={{fontSize:13,fontWeight:700,color:"var(--ink-mid)"}}>{option.label}</span>
+                <button className="ghost-btn" onClick={()=>removeMinuteOption(option.id)} style={{padding:"4px 8px",fontSize:11}}>Remove</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      </Modal>
+
+      <Modal show={!!confirmDialog} onClose={()=>setConfirmDialog(null)} title={confirmDialog?.title ?? "Confirm"} emoji={confirmDialog?.danger ? "⚠️" : "❔"}>
+        <div style={{display:"flex",flexDirection:"column",gap:16}}>
+          <div style={{fontSize:14,color:"var(--ink-mid)",lineHeight:1.5}}>{confirmDialog?.message ?? "Are you sure?"}</div>
+          <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+            <button className="ghost-btn" onClick={()=>setConfirmDialog(null)}>Cancel</button>
+            <button className="action-btn" onClick={()=>{confirmDialog?.onConfirm?.(); setConfirmDialog(null);}} style={{background:confirmDialog?.danger ? "var(--red)" : "var(--teal)",color:"#fff"}}>{confirmDialog?.confirmLabel ?? "Confirm"}</button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal show={!!renameTarget} onClose={()=>{setRenameTarget(null);setRenameValue("");}} title={renameTarget?.type === "student" ? "Rename Student" : "Rename Goal"} emoji="✏️">
+        <SectionLabel>{renameTarget?.type === "student" ? "Student Name" : "Goal Name"}</SectionLabel>
+        <input type="text" value={renameValue} onChange={e=>setRenameValue(e.target.value)} onKeyDown={e=>e.key==="Enter"&&saveRename()} style={{marginTop:6,marginBottom:16}} autoFocus/>
+        <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+          <button className="ghost-btn" onClick={()=>{setRenameTarget(null);setRenameValue("");}}>Cancel</button>
+          <button className="action-btn" onClick={saveRename} style={{background:"var(--teal)",color:"#fff"}}>Save ✓</button>
+        </div>
+      </Modal>
+
+      <Modal show={!!renameTarget} onClose={()=>{setRenameTarget(null);setRenameValue("");}} title={renameTarget?.type === "student" ? "Rename Student" : "Rename Goal"} emoji="✏️">
+        <SectionLabel>{renameTarget?.type === "student" ? "Student Name" : "Goal Name"}</SectionLabel>
+        <input type="text" value={renameValue} onChange={e=>setRenameValue(e.target.value)} onKeyDown={e=>e.key==="Enter"&&saveRename()} style={{marginTop:6,marginBottom:16}} autoFocus/>
+        <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+          <button className="ghost-btn" onClick={()=>{setRenameTarget(null);setRenameValue("");}}>Cancel</button>
+          <button className="action-btn" onClick={saveRename} style={{background:"var(--teal)",color:"#fff"}}>Save ✓</button>
         </div>
       </Modal>
 
