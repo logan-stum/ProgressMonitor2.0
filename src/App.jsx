@@ -515,6 +515,7 @@ function Dashboard({
   setHomeGroupFilter,
 }){
   const thisYear = currentYear();
+  const [dashboardGroupCollapsed, setDashboardGroupCollapsed] = useState({});
   const allAccommodations = [...new Set(sets.flatMap(student => (student.accommodations ?? []).map(item => item.name.trim())).filter(Boolean))].sort((a, b) => a.localeCompare(b));
 
   const filteredStudents = sets.filter(student => {
@@ -581,10 +582,7 @@ function Dashboard({
           );
         })}
 
-        <div style={{ display: "flex", gap: 8, marginTop: 2 }}>
-          {streak > 0 && <div style={{ fontSize: 11, color: "var(--ink-soft)" }}>🔥 {streak} session{streak !== 1 ? "s" : ""} this month</div>}
-          {yearPts.length > 0 && <div style={{ fontSize: 11, color: "var(--ink-soft)", marginLeft: "auto" }}>{yearPts.length} pts in {thisYear}</div>}
-        </div>
+        <div style={{ display: "flex", gap: 8, marginTop: 2 }} />
       </div>
     );
   };
@@ -656,17 +654,25 @@ function Dashboard({
                   }}
                   style={{ display: "flex", flexDirection: "column", gap: 12, background: "rgba(255,255,255,0.2)", borderRadius: 16, padding: 12, border: "1.5px dashed var(--border)" }}
                 >
-                  <div style={{ fontFamily: "var(--font-head)", fontWeight: 900, fontSize: 16, display: "flex", alignItems: "center", gap: 8 }}>
-                    <span>{section.name}</span>
-                    <span style={{ fontSize: 12, color: "var(--ink-soft)", fontWeight: 700 }}>({section.students.length})</span>
+                  <div
+                    onClick={() => setDashboardGroupCollapsed(prev => ({ ...prev, [section.id]: !prev[section.id] }))}
+                    style={{ fontFamily: "var(--font-head)", fontWeight: 900, fontSize: 16, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, cursor: "pointer" }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span>{section.name}</span>
+                      <span style={{ fontSize: 12, color: "var(--ink-soft)", fontWeight: 700 }}>({section.students.length})</span>
+                    </div>
+                    <span style={{ fontSize: 13, color: "var(--ink-soft)" }}>{dashboardGroupCollapsed[section.id] ? "▸" : "▾"}</span>
                   </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(260px,1fr))", gap: 16 }}>
-                    {section.students.length > 0 ? section.students.map((student) => renderStudentCard(student, sets.indexOf(student))) : (
-                      <div style={{ padding: "18px 12px", border: "2px dashed var(--border)", borderRadius: 12, color: "var(--ink-soft)", fontSize: 13, background: "var(--paper)" }}>
-                        Drop a student here to place them in {section.name}.
-                      </div>
-                    )}
-                  </div>
+                  {!dashboardGroupCollapsed[section.id] && (
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(260px,1fr))", gap: 16 }}>
+                      {section.students.length > 0 ? section.students.map((student) => renderStudentCard(student, sets.indexOf(student))) : (
+                        <div style={{ padding: "18px 12px", border: "2px dashed var(--border)", borderRadius: 12, color: "var(--ink-soft)", fontSize: 13, background: "var(--paper)" }}>
+                          Drop a student here to place them in {section.name}.
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -818,7 +824,6 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
         <select value={viewYear} onChange={e=>setViewYear(Number(e.target.value))}>
           {yearList.map(y=><option key={y} value={y}>{y}</option>)}
         </select>
-        {streak>0&&<div style={{display:"flex",alignItems:"center",gap:5,padding:"5px 12px",borderRadius:99,background:"#fffbec",border:"1.5px solid #ffd16666",fontFamily:"var(--font-head)",fontWeight:700,fontSize:12,color:"#9a6a00"}}>🔥 {streak} session{streak!==1?"s":""} this month</div>}
         <button className="action-btn" onClick={()=>setShowQL(true)} style={{background:pal.chip,color:"#fff",marginLeft:"auto",padding:"6px 14px",fontSize:12}}>⚡ Quick Log</button>
       </div>
 
@@ -865,7 +870,7 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
 
       <div style={{background:"var(--yellow-lt)",borderRadius:"var(--r-lg)",border:"2px solid #ffd166",padding:"16px",boxShadow:"var(--shadow-sm)"}}>
         <div style={{fontFamily:"var(--font-head)",fontWeight:800,fontSize:13,marginBottom:8,color:"#9a6a00"}}>🗒 Goal Notes</div>
-        <textarea value={chart.notes} onChange={e=>upd(d=>d[selSet].charts[selChart].notes=e.target.value)} placeholder="Strategies, parent notes, observations…" style={{resize:"none",height:80,fontSize:13,background:"rgba(255,255,255,.6)",border:"1.5px solid #ffd16699"}}/>
+        <textarea value={chart.notes} onChange={e=>upd(d=>d[selSet].charts[selChart].notes=e.target.value)} placeholder="Strategies, parent notes, observations…" style={{display:"block",width:"100%",minHeight:140,resize:"vertical",fontSize:13,background:"rgba(255,255,255,.6)",border:"1.5px solid #ffd16699"}}/>
       </div>
 
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
@@ -890,9 +895,9 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
         </div>
 
         <div style={{display:"flex",flexDirection:"column",gap:14}}>
-          <div style={{background:"var(--paper)",borderRadius:"var(--r-lg)",border:"2px solid var(--border)",padding:"18px",boxShadow:"var(--shadow-sm)",flex:1}}>
+          <div style={{background:"var(--paper)",borderRadius:"var(--r-lg)",border:"2px solid var(--border)",padding:"18px",boxShadow:"var(--shadow-sm)",flex:1,display:"flex",flexDirection:"column"}}>
             <div style={{fontFamily:"var(--font-head)",fontWeight:800,fontSize:14,marginBottom:12}}>📋 Session Log</div>
-            <div style={{maxHeight:185,overflowY:"auto"}}>
+            <div style={{flex:1,minHeight:0,overflowY:"auto"}}>
               {pts.length===0?(
                 <div style={{textAlign:"center",padding:"24px 0",color:"var(--ink-soft)",fontSize:13}}>
                   <div style={{fontSize:30,marginBottom:6}}>🌱</div>No sessions in {viewYear} yet!
@@ -1152,14 +1157,13 @@ function ReportModal({show,onClose,sets,selSet,onPrint}){
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:12}}>
                   {[
-                    {label:"Baseline",val:`${c.startValue}%`,sub:c.startDate||"—"},
-                    {label:"Goal",val:`${c.goalValue}%`,sub:c.goalDate||"—"},
-                    {label:"Progress to Goal",val:goalPct!=null?`${goalPct}%`:"—",sub:`${yearPts.length} sessions in ${thisYear}`},
-                  ].map(({label,val,sub})=>(
+                    {label:"Baseline",val:`${c.startValue}%`},
+                    {label:"Goal",val:`${c.goalValue}%`},
+                    {label:"Progress to Goal",val:goalPct!=null?`${goalPct}%`:"—"},
+                  ].map(({label,val})=>(
                     <div key={label} style={{background:"var(--paper)",borderRadius:8,padding:"10px 12px",border:"1.5px solid var(--border)"}}>
                       <div style={{fontFamily:"var(--font-head)",fontWeight:900,fontSize:18}}>{val}</div>
                       <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em",color:"var(--ink-soft)"}}>{label}</div>
-                      <div style={{fontSize:11,color:"var(--ink-soft)"}}>{sub}</div>
                     </div>
                   ))}
                 </div>
@@ -1360,8 +1364,6 @@ export default function App(){
       const pts = c.data ?? [];
       const latest = pts[pts.length - 1];
       const goalPct = latest && c.goalValue ? Math.round((latest.y / c.goalValue) * 100) : null;
-      const thisYear = currentYear();
-      const yearPts = pts.filter(p => p.x?.startsWith(String(thisYear)));
       return `
         <section class="goal-block">
           <div class="goal-header">
@@ -1371,9 +1373,10 @@ export default function App(){
           <div class="mini-grid">
             <div class="mini-box"><div class="mini-label">Baseline</div><div class="mini-number">${c.startValue ?? 0}%</div></div>
             <div class="mini-box"><div class="mini-label">Goal</div><div class="mini-number">${c.goalValue ?? 0}%</div></div>
-            <div class="mini-box"><div class="mini-label">Progress to Goal</div><div class="mini-number">${goalPct != null ? `${goalPct}%` : "—"}</div><div class="mini-sub">${yearPts.length} sessions in ${thisYear}</div></div>
+            <div class="mini-box"><div class="mini-label">Progress to Goal</div><div class="mini-number">${goalPct != null ? `${goalPct}%` : "—"}</div></div>
           </div>
-          ${(latest && latest.notes) ? `<div class="goal-note">Notes: ${latest.notes}</div>` : ""}
+          ${(latest && latest.notes) ? `<div class="goal-note">Session note: ${latest.notes}</div>` : ""}
+          ${(c.notes) ? `<div class="goal-note goal-notes-block">Goal notes: ${c.notes}</div>` : ""}
         </section>
       `;
     }).join("");
@@ -1484,6 +1487,14 @@ export default function App(){
             margin-top: 10px;
             font-size: 12px;
             color: #4d4d5f;
+            background: #fffaf0;
+            border: 1px solid #f8dd9a;
+            border-radius: 8px;
+            padding: 8px 10px;
+          }
+          .goal-notes-block {
+            background: #fff7f0;
+            border-color: #f9c7a5;
           }
           .acc-item {
             padding: 4px 0;
@@ -1628,7 +1639,6 @@ export default function App(){
             <div style={{width:38,height:38,borderRadius:11,background:"linear-gradient(135deg,#26c6b0,#4e9af1)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20}}>📈</div>
             <div>
               <div style={{fontFamily:"var(--font-head)",fontWeight:900,fontSize:15}}>Progress Monitor</div>
-              <div style={{fontSize:11,color:"var(--ink-soft)"}}>Track every win ✨</div>
             </div>
           </div>
         </div>
