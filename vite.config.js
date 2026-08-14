@@ -3,5 +3,5 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
-  base: '/ProgressMonitor.github.io/',
+  base: '/ProgressMonitor2.0/',
 })
