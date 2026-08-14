@@ -63,8 +63,43 @@ css.textContent = `
   .sparkline{display:flex;align-items:flex-end;gap:2px;height:28px}
   .spark-bar{border-radius:2px 2px 0 0;min-width:4px;transition:height .3s}
   @media print {
-    .no-print{display:none!important}
-    body{background:white}
+    @page {
+      size: A4 portrait;
+      margin: 0.5in;
+    }
+    html, body, #root, #root > div {
+      background: white !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      overflow: visible !important;
+      height: auto !important;
+      max-height: none !important;
+    }
+    body * { visibility: hidden !important; }
+    .print-report, .print-report * { visibility: visible !important; }
+    .print-report {
+      position: static !important;
+      inset: auto !important;
+      display: block !important;
+      width: 100% !important;
+      max-width: none !important;
+      max-height: none !important;
+      height: auto !important;
+      overflow: visible !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      border: none !important;
+      box-shadow: none !important;
+      border-radius: 0 !important;
+    }
+    .print-report > div,
+    .report-section {
+      break-inside: auto !important;
+      page-break-inside: auto !important;
+      page-break-after: auto !important;
+      overflow: visible !important;
+    }
+    .no-print { display: none !important; }
   }
 `;
 document.head.appendChild(css);
@@ -79,6 +114,8 @@ const PALETTE=[
   {bg:"#edfdf5",border:"#52c97a",text:"#1e7a45",chip:"#52c97a"},
 ];
 const EMOJIS=["🌟","🎯","🚀","💡","🎓","🌈","⚡","🦋","🔥","🏆"];
+const EMOJI_OPTIONS=[
+  "😀","😁","😂","😃","😄","😅","😆","😉","😊","🙂","🙃","😌","😍","🥰","😎","🤩","😇","🤪","😬","🤭","😮","😴","🤓","😺","😸","😹","😻","😼","😽","🙀","😿","😾","🐶","🐱","🐭","🐹","🐰","🦊","🐻","🐼","🐨","🐯","🦁","🐮","🐷","🐸","🐵","🐔","🐧","🐦","🦆","🦄","🐝","🦋","🌼","🌻","🌞","🌙","⭐","🌟","✨","⚡","🔥","💫","🌈","🌍","🌱","🌿","☀️","🌤️","🌊","🚀","🛸","🚁","✈️","🚗","🏠","🏫","🎒","🎓","📚","✏️","📝","🧠","🎯","🏆","🥇","🥈","🥉","🎉","🎊","🎁","🎨","🧩","🎵","🎶","🎮","🧸","🍎","🍉","🍓","🍇","🍒","🥕","🌮","🍔","🍕","🍦","☕","🍵","💡","🔍","✅","❌","⚠️","💯","🔒","🔑","🛠️","⏱️","📅","⏰","💙","💚","💛","💜","💖","❤️","🧡","🙌","👏","👋","🤝","🧑‍🏫","👩‍🏫","👨‍🏫","👦","👧","🧒","🧑","👨","👩","🦄","🐙","🐠","🌸","💐","🌹","🌷","🪴","☘️","🍀","⚽","🏀","🎾","🏈","🏐","🎲","🎳","🏓","🎻","🎺","🎹","🎼","🥁" ];
 const MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"];
 const DAYS=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 const DOT_COLORS={given:"#52c97a",refused:"#ff6b6b",not_given:"#c8c8d8",absent:"#a78bfa"};
@@ -97,6 +134,7 @@ const DEFAULT_MINUTE_OPTIONS=[
 
 const getPal   = i => PALETTE[i%PALETTE.length];
 const getEmoji = n => EMOJIS[(n?.charCodeAt(0)??0)%EMOJIS.length];
+const getStudentEmoji = student => student?.emoji?.trim() || getEmoji(student?.name ?? "");
 const clamp    = (v,lo,hi) => Math.max(lo,Math.min(hi,v));
 const sanitize = arr => (Array.isArray(arr)?arr:[]).map(p=>({...p,y:clamp(Number(p.y),0,100)})).sort((a,b)=>new Date(a.x)-new Date(b.x));
 const todayStr = () => new Date().toISOString().split("T")[0];
@@ -147,6 +185,44 @@ function Modal({show,onClose,title,emoji,children,wide}){
         {children}
       </div>
     </div>
+  );
+}
+
+function EmojiPickerModal({show,onClose,onSelect,selected}){
+  const [search,setSearch]=useState("");
+  const filtered=EMOJI_OPTIONS.filter(emoji => {
+    if(!search.trim()) return true;
+    const needle = search.toLowerCase();
+    return emoji.toLowerCase().includes(needle) || "smile happy school sun star animal fruit heart classroom".includes(needle);
+  });
+  if(!show) return null;
+  return (
+    <Modal show={show} onClose={onClose} title="Choose Emoji" emoji="🎨">
+      <div style={{display:"flex",flexDirection:"column",gap:12}}>
+        <input type="text" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search emoji ideas…" autoFocus />
+        <div style={{display:"grid",gridTemplateColumns:"repeat(8,minmax(0,1fr))",gap:8,maxHeight:260,overflowY:"auto",paddingRight:4}}>
+          {filtered.map(emoji => (
+            <button
+              key={emoji}
+              type="button"
+              onClick={()=>{onSelect(emoji); onClose();}}
+              title={emoji}
+              style={{
+                fontSize:26,
+                background:selected===emoji ? "rgba(38,198,176,0.15)" : "var(--cream)",
+                border:`1.5px solid ${selected===emoji ? "var(--teal)" : "var(--border)"}`,
+                borderRadius:10,
+                padding:"10px 0",
+                cursor:"pointer",
+                transition:"all .15s ease",
+              }}
+            >
+              {emoji}
+            </button>
+          ))}
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -422,77 +498,184 @@ function AccommodationsTab({student,selSet,upd}){
 }
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
-function Dashboard({sets,onSelectStudent,onAddStudent,getPal,getEmoji}){
-  const thisYear=currentYear();
-  return(
-    <div style={{flex:1,overflow:"auto",padding:"24px 28px"}}>
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:24}}>
-        <div>
-          <div style={{fontFamily:"var(--font-head)",fontWeight:900,fontSize:22}}>👋 Good morning!</div>
-          <div style={{fontSize:13,color:"var(--ink-soft)",marginTop:2}}>Here's your class at a glance.</div>
+function Dashboard({
+  sets,
+  onSelectStudent,
+  onAddStudent,
+  getPal,
+  getStudentEmoji,
+  onUpdateStudentGroup,
+  groups,
+  onOpenGroupModal,
+  homeSearch,
+  setHomeSearch,
+  homeAccommodation,
+  setHomeAccommodation,
+  homeGroupFilter,
+  setHomeGroupFilter,
+}){
+  const thisYear = currentYear();
+  const allAccommodations = [...new Set(sets.flatMap(student => (student.accommodations ?? []).map(item => item.name.trim())).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+
+  const filteredStudents = sets.filter(student => {
+    const matchesSearch = !homeSearch || `${student.name} ${(student.accommodations ?? []).map(item => item.name).join(" ")}`.toLowerCase().includes(homeSearch.toLowerCase());
+    const matchesAccommodation = !homeAccommodation || (student.accommodations ?? []).some(item => item.name === homeAccommodation);
+    const matchesGroup = homeGroupFilter === "all" || (homeGroupFilter === "ungrouped" ? !student.groupId : student.groupId === homeGroupFilter);
+    return matchesSearch && matchesAccommodation && matchesGroup;
+  });
+
+  const groupSections = [
+    ...groups.map(group => ({
+      ...group,
+      students: filteredStudents.filter(student => student.groupId === group.id),
+    })),
+    { id: "ungrouped", name: "Ungrouped", students: filteredStudents.filter(student => !student.groupId || !groups.some(group => group.id === student.groupId)) },
+  ];
+
+  const ungroupedStudents = filteredStudents.filter(student => !student.groupId || !groups.some(group => group.id === student.groupId));
+
+  const renderStudentCard = (student, index) => {
+    const p = getPal(index);
+    const yearPts = student.charts.flatMap(c => (c.data ?? []).filter(pt => pt.x?.startsWith(String(thisYear))));
+    const allPts = student.charts.flatMap(c => c.data ?? []);
+    const latest = allPts[allPts.length - 1];
+    const thisMonthStr = `${thisYear}-${String(new Date().getMonth() + 1).padStart(2, "0")}`;
+    const monthPts = allPts.filter(pt => pt.x?.startsWith(thisMonthStr));
+    const streak = monthPts.length;
+    const accDays = student.accDays ?? {};
+    const todayAcc = accDays[todayStr()];
+    const accDone = !!(todayAcc && Object.keys(todayAcc).length > 0);
+
+    return (
+      <div key={index} className="stu-card" draggable onDragStart={event => {
+          event.dataTransfer.setData("text/plain", String(index));
+          event.dataTransfer.effectAllowed = "move";
+        }} onClick={() => onSelectStudent(index)} style={{ borderColor: p.border }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ width: 40, height: 40, borderRadius: "50%", background: `linear-gradient(135deg,${p.chip},${p.chip}99)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>{getStudentEmoji(student)}</div>
+          <div style={{ flex: 1, overflow: "hidden" }}>
+            <div style={{ fontFamily: "var(--font-head)", fontWeight: 800, fontSize: 15, color: p.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{student.name}</div>
+            <div style={{ fontSize: 11, color: "var(--ink-soft)" }}>{student.charts.length} goal{student.charts.length !== 1 ? "s" : ""}</div>
+          </div>
+          {accDone && <span title="Accommodations logged today" style={{ fontSize: 16 }}>✅</span>}
         </div>
-        <button className="action-btn" onClick={onAddStudent} style={{background:"var(--teal)",color:"#fff"}}>+ Add Student</button>
+
+        {student.charts.map((c, ci) => {
+          const cPts = c.data ?? [];
+          const cLatest = cPts[cPts.length - 1];
+          if (!cLatest) return null;
+          const goalPct = c.goalValue ? Math.round((cLatest.y / c.goalValue) * 100) : null;
+          return (
+            <div key={ci} style={{ background: p.bg, borderRadius: 8, padding: "8px 10px", border: `1.5px solid ${p.border}44` }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: p.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{c.name}</span>
+                <span style={{ fontFamily: "var(--font-head)", fontWeight: 900, fontSize: 14, color: p.chip, flexShrink: 0, marginLeft: 6 }}>{cLatest.y}%</span>
+              </div>
+              <Sparkline data={cPts} color={p.chip} />
+              {goalPct !== null && (
+                <div style={{ marginTop: 5, height: 4, background: "var(--border)", borderRadius: 99, overflow: "hidden" }}>
+                  <div style={{ width: `${Math.min(goalPct, 100)}%`, height: "100%", background: p.chip, borderRadius: 99, transition: "width .4s ease" }} />
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        <div style={{ display: "flex", gap: 8, marginTop: 2 }}>
+          {streak > 0 && <div style={{ fontSize: 11, color: "var(--ink-soft)" }}>🔥 {streak} session{streak !== 1 ? "s" : ""} this month</div>}
+          {yearPts.length > 0 && <div style={{ fontSize: 11, color: "var(--ink-soft)", marginLeft: "auto" }}>{yearPts.length} pts in {thisYear}</div>}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div style={{ flex: 1, overflow: "auto", padding: "24px 28px" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18, flexWrap: "wrap", gap: 12 }}>
+        <div>
+          <div style={{ fontFamily: "var(--font-head)", fontWeight: 900, fontSize: 22 }}>👋 Good morning!</div>
+          <div style={{ fontSize: 13, color: "var(--ink-soft)", marginTop: 2 }}>Here’s your class at a glance.</div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <button className="action-btn" onClick={onOpenGroupModal} style={{ background: "var(--yellow)", color: "#2d2d3a" }}>+ Add Group</button>
+          <button className="action-btn" onClick={onAddStudent} style={{ background: "var(--teal)", color: "#fff" }}>+ Add Student</button>
+        </div>
       </div>
 
-      {sets.length===0?(
-        <div style={{textAlign:"center",padding:"60px 24px",color:"var(--ink-soft)"}}>
-          <div style={{fontSize:56,marginBottom:12}}>🎒</div>
-          <div style={{fontFamily:"var(--font-head)",fontWeight:800,fontSize:18,marginBottom:8}}>No students yet</div>
-          <button className="action-btn" onClick={onAddStudent} style={{background:"var(--teal)",color:"#fff",marginTop:8}}>+ Add Your First Student</button>
+      <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 16, flexWrap: "wrap" }}>
+        <div style={{ position: "relative", minWidth: 220, flex: 1 }}>
+          <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", fontSize: 14 }}>🔎</span>
+          <input
+            type="text"
+            value={homeSearch}
+            onChange={event => setHomeSearch(event.target.value)}
+            placeholder="Search student or accommodation…"
+            style={{ paddingLeft: 36 }}
+          />
         </div>
-      ):(
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:16}}>
-          {sets.map((s,si)=>{
-            const p=getPal(si);
-            const yearPts=s.charts.flatMap(c=>(c.data??[]).filter(pt=>pt.x?.startsWith(String(thisYear))));
-            const allPts=s.charts.flatMap(c=>c.data??[]);
-            const latest=allPts[allPts.length-1];
-            const thisMonthStr=`${thisYear}-${String(new Date().getMonth()+1).padStart(2,"0")}`;
-            const monthPts=allPts.filter(pt=>pt.x?.startsWith(thisMonthStr));
-            const streak=monthPts.length;
-            const accDays=s.accDays??{};
-            const todayAcc=accDays[todayStr()];
-            const accDone=todayAcc&&Object.values(todayAcc).length>0;
-            return(
-              <div key={si} className="stu-card" onClick={()=>onSelectStudent(si)} style={{borderColor:p.border}}>
-                <div style={{display:"flex",alignItems:"center",gap:10}}>
-                  <div style={{width:40,height:40,borderRadius:"50%",background:`linear-gradient(135deg,${p.chip},${p.chip}99)`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>{getEmoji(s.name)}</div>
-                  <div style={{flex:1,overflow:"hidden"}}>
-                    <div style={{fontFamily:"var(--font-head)",fontWeight:800,fontSize:15,color:p.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.name}</div>
-                    <div style={{fontSize:11,color:"var(--ink-soft)"}}>{s.charts.length} goal{s.charts.length!==1?"s":""}</div>
+
+        <select value={homeAccommodation} onChange={event => setHomeAccommodation(event.target.value)} style={{ minWidth: 180 }}>
+          <option value="">All accommodations</option>
+          {allAccommodations.map(acc => (
+            <option key={acc} value={acc}>{acc}</option>
+          ))}
+        </select>
+
+        <select value={homeGroupFilter} onChange={event => setHomeGroupFilter(event.target.value)} style={{ minWidth: 160 }}>
+          <option value="all">All groups</option>
+          <option value="ungrouped">Ungrouped</option>
+          {groups.map(group => (
+            <option key={group.id} value={group.id}>{group.name}</option>
+          ))}
+        </select>
+      </div>
+
+      {sets.length === 0 ? (
+        <div style={{ textAlign: "center", padding: "60px 24px", color: "var(--ink-soft)" }}>
+          <div style={{ fontSize: 56, marginBottom: 12 }}>🎒</div>
+          <div style={{ fontFamily: "var(--font-head)", fontWeight: 800, fontSize: 18, marginBottom: 8 }}>No students yet</div>
+          <button className="action-btn" onClick={onAddStudent} style={{ background: "var(--teal)", color: "#fff", marginTop: 8 }}>+ Add Your First Student</button>
+        </div>
+      ) : filteredStudents.length === 0 ? (
+        <div style={{ textAlign: "center", padding: "60px 24px", color: "var(--ink-soft)" }}>
+          <div style={{ fontSize: 48, marginBottom: 12 }}>🔎</div>
+          <div style={{ fontFamily: "var(--font-head)", fontWeight: 800, fontSize: 18 }}>No students match that filter</div>
+        </div>
+      ) : (
+        <>
+          {homeGroupFilter === "all" && !homeAccommodation && !homeSearch.trim() ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+              {groupSections.map(section => (
+                <div
+                  key={section.id}
+                  onDragOver={event => event.preventDefault()}
+                  onDrop={event => {
+                    event.preventDefault();
+                    const draggedIndex = Number(event.dataTransfer.getData("text/plain"));
+                    if (!Number.isNaN(draggedIndex)) onUpdateStudentGroup(draggedIndex, section.id === "ungrouped" ? "" : section.id);
+                  }}
+                  style={{ display: "flex", flexDirection: "column", gap: 12, background: "rgba(255,255,255,0.2)", borderRadius: 16, padding: 12, border: "1.5px dashed var(--border)" }}
+                >
+                  <div style={{ fontFamily: "var(--font-head)", fontWeight: 900, fontSize: 16, display: "flex", alignItems: "center", gap: 8 }}>
+                    <span>{section.name}</span>
+                    <span style={{ fontSize: 12, color: "var(--ink-soft)", fontWeight: 700 }}>({section.students.length})</span>
                   </div>
-                  {accDone&&<span title="Accommodations logged today" style={{fontSize:16}}>✅</span>}
-                </div>
-
-                {s.charts.map((c,ci)=>{
-                  const cPts=c.data??[];
-                  const cLatest=cPts[cPts.length-1];
-                  if(!cLatest) return null;
-                  const goalPct=c.goalValue?Math.round((cLatest.y/c.goalValue)*100):null;
-                  return(
-                    <div key={ci} style={{background:p.bg,borderRadius:8,padding:"8px 10px",border:`1.5px solid ${p.border}44`}}>
-                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
-                        <span style={{fontSize:12,fontWeight:700,color:p.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1}}>{c.name}</span>
-                        <span style={{fontFamily:"var(--font-head)",fontWeight:900,fontSize:14,color:p.chip,flexShrink:0,marginLeft:6}}>{cLatest.y}%</span>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(260px,1fr))", gap: 16 }}>
+                    {section.students.length > 0 ? section.students.map((student) => renderStudentCard(student, sets.indexOf(student))) : (
+                      <div style={{ padding: "18px 12px", border: "2px dashed var(--border)", borderRadius: 12, color: "var(--ink-soft)", fontSize: 13, background: "var(--paper)" }}>
+                        Drop a student here to place them in {section.name}.
                       </div>
-                      <Sparkline data={cPts} color={p.chip}/>
-                      {goalPct!==null&&(
-                        <div style={{marginTop:5,height:4,background:"var(--border)",borderRadius:99,overflow:"hidden"}}>
-                          <div style={{width:`${Math.min(goalPct,100)}%`,height:"100%",background:p.chip,borderRadius:99,transition:"width .4s ease"}}/>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-
-                <div style={{display:"flex",gap:8,marginTop:2}}>
-                  {streak>0&&<div style={{fontSize:11,color:"var(--ink-soft)"}}>🔥 {streak} session{streak!==1?"s":""} this month</div>}
-                  {yearPts.length>0&&<div style={{fontSize:11,color:"var(--ink-soft)",marginLeft:"auto"}}>{yearPts.length} pts in {thisYear}</div>}
+                    )}
+                  </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
+              ))}
+            </div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(260px,1fr))", gap: 16 }}>
+              {filteredStudents.map((student, idx) => renderStudentCard(student, sets.indexOf(student)))}
+            </div>
+          )}
+        </>
       )}
     </div>
   );
@@ -915,7 +1098,7 @@ function MinutesTab({student, selSet, upd, minuteOptions, requestConfirm}){
 }
 
 // ─── Report Modal ─────────────────────────────────────────────────────────────
-function ReportModal({show,onClose,sets,selSet}){
+function ReportModal({show,onClose,sets,selSet,onPrint}){
   const student=sets[selSet];
   if(!show||!student) return null;
   const today=new Date().toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"});
@@ -924,11 +1107,11 @@ function ReportModal({show,onClose,sets,selSet}){
   const totalMinutes = minuteEntries.reduce((sum,entry)=>sum + Number(entry.amount || 0),0);
   return(
     <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(45,45,58,.35)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:300,backdropFilter:"blur(6px)"}}>
-      <div onClick={e=>e.stopPropagation()} className="card-appear" style={{background:"var(--paper)",borderRadius:"var(--r-lg)",boxShadow:"var(--shadow-lg)",padding:36,width:"92%",maxWidth:680,maxHeight:"90vh",overflowY:"auto",border:"2px solid var(--border)"}}>
+      <div onClick={e=>e.stopPropagation()} className="card-appear print-report" style={{background:"var(--paper)",borderRadius:"var(--r-lg)",boxShadow:"var(--shadow-lg)",padding:36,width:"92%",maxWidth:680,maxHeight:"90vh",overflowY:"auto",border:"2px solid var(--border)"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:24}} className="no-print">
           <div style={{fontFamily:"var(--font-head)",fontWeight:800,fontSize:17}}>📄 Progress Report</div>
           <div style={{display:"flex",gap:8}}>
-            <button className="action-btn" onClick={()=>window.print()} style={{background:"var(--teal)",color:"#fff"}}>🖨 Print</button>
+            <button className="action-btn" onClick={onPrint} style={{background:"var(--teal)",color:"#fff"}}>🖨 Print</button>
             <button className="ghost-btn" onClick={onClose}>✕</button>
           </div>
         </div>
@@ -962,7 +1145,7 @@ function ReportModal({show,onClose,sets,selSet}){
             const thisYear=currentYear();
             const yearPts=pts.filter(p=>p.x?.startsWith(String(thisYear)));
             return(
-              <div key={ci} style={{marginBottom:24,padding:"16px",background:"var(--cream)",borderRadius:"var(--r)",border:"1.5px solid var(--border)"}}>
+              <div key={ci} className="report-section" style={{marginBottom:24,padding:"16px",background:"var(--cream)",borderRadius:"var(--r)",border:"1.5px solid var(--border)"}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
                   <div style={{fontFamily:"var(--font-head)",fontWeight:800,fontSize:15}}>{c.name}</div>
                   {latest&&<div style={{fontFamily:"var(--font-head)",fontWeight:900,fontSize:18,color:pal.chip}}>{latest.y}%</div>}
@@ -1002,7 +1185,7 @@ function ReportModal({show,onClose,sets,selSet}){
           })}
 
           {(student.accommodations??[]).length>0&&(
-            <div style={{padding:"16px",background:"var(--cream)",borderRadius:"var(--r)",border:"1.5px solid var(--border)"}}>
+            <div className="report-section" style={{padding:"16px",background:"var(--cream)",borderRadius:"var(--r)",border:"1.5px solid var(--border)"}}>
               <div style={{fontFamily:"var(--font-head)",fontWeight:800,fontSize:15,marginBottom:10}}>🛠 Accommodations</div>
               {(student.accommodations??[]).map((a,i)=>(
                 <div key={i} style={{fontSize:13,padding:"4px 0",borderBottom:"1px dashed var(--border)"}}>{i+1}. {a.name}</div>
@@ -1011,7 +1194,7 @@ function ReportModal({show,onClose,sets,selSet}){
           )}
 
           {(student.accommodations??[]).length===0&&(
-            <div style={{padding:"16px",background:"var(--cream)",borderRadius:"var(--r)",border:"1.5px solid var(--border)",color:"var(--ink-soft)"}}>
+            <div className="report-section" style={{padding:"16px",background:"var(--cream)",borderRadius:"var(--r)",border:"1.5px solid var(--border)",color:"var(--ink-soft)"}}>
               <div style={{fontFamily:"var(--font-head)",fontWeight:800,fontSize:15,marginBottom:4}}>🛠 Accommodations</div>
               <div style={{fontSize:13}}>No accommodations currently recorded.</div>
             </div>
@@ -1054,10 +1237,27 @@ export default function App(){
   const [confirmDialog,setConfirmDialog]=useState(null);
   const [renameTarget,setRenameTarget]=useState(null);
   const [renameValue,setRenameValue]=useState("");
+  const [renameEmoji,setRenameEmoji]=useState("");
   const [newSName,setNewSName]=useState("");
+  const [newSEmoji,setNewSEmoji]=useState("");
+  const [showGroupModal,setShowGroupModal]=useState(false);
+  const [newGroupName,setNewGroupName]=useState("");
+  const [sidebarGroupCollapsed,setSidebarGroupCollapsed]=useState({});
+  const [sidebarControlsCollapsed,setSidebarControlsCollapsed]=useState(false);
+  const [showEmojiPicker,setShowEmojiPicker]=useState(false);
+  const [emojiTarget,setEmojiTarget]=useState(null);
   const [newGName,setNewGName]=useState("");
   const [newMinuteOption,setNewMinuteOption]=useState("");
   const [showQL,setShowQL]=useState(false); // global quick log
+  const [homeSearch,setHomeSearch]=useState("");
+  const [homeAccommodation,setHomeAccommodation]=useState("");
+  const [homeGroupFilter,setHomeGroupFilter]=useState("all");
+  const [groups,setGroups]=useState(()=>{
+    try{
+      const s=localStorage.getItem("pm_groups");
+      return s?JSON.parse(s):[];
+    }catch{return [];}
+  });
   const [minuteOptions,setMinuteOptions]=useState(()=>{
     try{
       const s=localStorage.getItem("pm_minute_options");
@@ -1072,6 +1272,7 @@ export default function App(){
 
   useEffect(()=>{localStorage.setItem("pm_v2",JSON.stringify(sets));},[sets]);
   useEffect(()=>{localStorage.setItem("pm_minute_options",JSON.stringify(minuteOptions));},[minuteOptions]);
+  useEffect(()=>{localStorage.setItem("pm_groups",JSON.stringify(groups));},[groups]);
 
   const snap=()=>setHistory(h=>{const n=[...h,JSON.stringify(sets)];if(n.length>20)n.shift();return n;});
   const undo=()=>{if(!history.length)return;setHistory(h=>h.slice(0,-1));setSets(JSON.parse(history[history.length-1]));};
@@ -1082,13 +1283,51 @@ export default function App(){
 
   const addStudent=()=>{
     if(!newSName.trim()) return;
-    upd(d=>d.push({name:newSName.trim(),collapsed:false,accommodations:[],accDays:{},minutes:[],charts:[]}));
-    setSelSet(sets.length);setSelChart(0);setActiveTab("goals");setView("student");setNewSName("");setShowAS(false);
+    const name = newSName.trim();
+    const emoji = (newSEmoji.trim() || getStudentEmoji({ name })).slice(0, 2);
+    upd(d => d.push({ name, emoji, groupId: "", collapsed: false, accommodations: [], accDays: {}, minutes: [], charts: [] }));
+    setSelSet(sets.length);setSelChart(0);setActiveTab("goals");setView("student");setNewSName("");setNewSEmoji("");setShowAS(false);
   };
   const addGoal=()=>{
     if(!newGName.trim()) return;
     upd(d=>d[selSet].charts.push({name:newGName.trim(),startValue:0,startDate:"",goalValue:100,goalDate:"",data:[],notes:"",attachments:[]}));
     setSelChart(student.charts.length);setNewGName("");setShowAG(false);
+  };
+  const addGroup=()=>{
+    const label = newGroupName.trim();
+    if(!label) return;
+    setGroups(prev => [...prev, { id: `group-${Date.now()}-${Math.random().toString(16).slice(2,8)}`, name: label }]);
+    setNewGroupName("");
+    setShowGroupModal(false);
+  };
+  const updateStudentGroup=(studentIndex, groupId)=>{
+    upd(d => {
+      if (!d[studentIndex]) return;
+      d[studentIndex].groupId = groupId || "";
+    });
+  };
+  const reorderGroups=(draggedId,targetId)=>{
+    if (!draggedId || !targetId || draggedId === targetId) return;
+    setGroups(prev => {
+      const next = [...prev];
+      const from = next.findIndex(group => group.id === draggedId);
+      const to = next.findIndex(group => group.id === targetId);
+      if (from === -1 || to === -1) return prev;
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      return next;
+    });
+  };
+  const renameGroup=(groupId, nextName)=>{
+    const label = nextName.trim();
+    if (!label) return;
+    setGroups(prev => prev.map(group => group.id === groupId ? { ...group, name: label } : group));
+  };
+  const deleteGroup=(groupId)=>{
+    setGroups(prev => prev.filter(group => group.id !== groupId));
+    upd(d => d.forEach(student => {
+      if (student.groupId === groupId) student.groupId = "";
+    }));
   };
   const addMinuteOption=()=>{
     const label=newMinuteOption.trim();
@@ -1104,6 +1343,229 @@ export default function App(){
     a.href=URL.createObjectURL(new Blob([JSON.stringify(sets,null,2)],{type:"application/json"}));
     a.download="progress-data.json";a.click();
   };
+  const printStudentReport = () => {
+    const student = sets[selSet];
+    if (!student) return;
+
+    const today = new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+    const minuteEntries = Array.isArray(student.minutes) ? student.minutes : [];
+    const totalMinutes = minuteEntries.reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+    const minuteSummary = Object.entries(minuteEntries.reduce((acc, entry) => {
+      const label = entry.label || "Other";
+      acc[label] = (acc[label] || 0) + Number(entry.amount || 0);
+      return acc;
+    }, {}));
+
+    const goalMarkup = (student.charts ?? []).map((c) => {
+      const pts = c.data ?? [];
+      const latest = pts[pts.length - 1];
+      const goalPct = latest && c.goalValue ? Math.round((latest.y / c.goalValue) * 100) : null;
+      const thisYear = currentYear();
+      const yearPts = pts.filter(p => p.x?.startsWith(String(thisYear)));
+      return `
+        <section class="goal-block">
+          <div class="goal-header">
+            <span>${(c.name ?? "Goal").replace(/[&<>"']/g, s => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[s]))}</span>
+            <span class="goal-value">${latest ? `${latest.y}%` : "—"}</span>
+          </div>
+          <div class="mini-grid">
+            <div class="mini-box"><div class="mini-label">Baseline</div><div class="mini-number">${c.startValue ?? 0}%</div></div>
+            <div class="mini-box"><div class="mini-label">Goal</div><div class="mini-number">${c.goalValue ?? 0}%</div></div>
+            <div class="mini-box"><div class="mini-label">Progress to Goal</div><div class="mini-number">${goalPct != null ? `${goalPct}%` : "—"}</div><div class="mini-sub">${yearPts.length} sessions in ${thisYear}</div></div>
+          </div>
+          ${(latest && latest.notes) ? `<div class="goal-note">Notes: ${latest.notes}</div>` : ""}
+        </section>
+      `;
+    }).join("");
+
+    const accMarkup = (student.accommodations ?? []).length ? (student.accommodations ?? []).map((a, i) => `<div class="acc-item">${i + 1}. ${a.name}</div>`).join("") : "<div class=\"empty\">No accommodations recorded.</div>";
+
+    const printHtml = `<!doctype html>
+      <html>
+      <head>
+        <meta charset="utf-8" />
+        <title>Progress Report - ${student.name}</title>
+        <style>
+          @page { size: A4 portrait; margin: 0.6in; }
+          body {
+            margin: 0;
+            background: #ffffff;
+            color: #2d2d3a;
+            font-family: "Segoe UI", Arial, sans-serif;
+            line-height: 1.4;
+          }
+          .report {
+            width: 100%;
+            max-width: 100%;
+            box-sizing: border-box;
+          }
+          .report-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #e5dfd5;
+            padding-bottom: 10px;
+            margin-bottom: 18px;
+          }
+          .report-name {
+            font-size: 20px;
+            font-weight: 900;
+            color: #2d2d3a;
+          }
+          .report-meta {
+            font-size: 12px;
+            color: #6b6b7d;
+            margin-top: 2px;
+          }
+          .badge {
+            width: 18px;
+            height: 18px;
+            border-radius: 6px;
+            background: linear-gradient(135deg, #ff6b6b 0 16.66%, #ffd166 16.66% 33.32%, #52c97a 33.32% 49.98%, #4e9af1 49.98% 66.64%, #a78bfa 66.64% 83.3%, #ff9f6b 83.3% 100%);
+            display: inline-block;
+          }
+          .section {
+            border: 1px solid #e7e1d8;
+            border-radius: 12px;
+            background: #fff;
+            padding: 14px 16px;
+            margin-bottom: 18px;
+            box-sizing: border-box;
+            page-break-inside: avoid;
+            break-inside: avoid;
+          }
+          .section-title {
+            font-size: 15px;
+            font-weight: 800;
+            margin-bottom: 10px;
+          }
+          .mini-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 10px;
+            margin-top: 10px;
+          }
+          .mini-box {
+            border: 1px solid #e7e1d8;
+            border-radius: 8px;
+            padding: 10px 12px;
+            background: #faf7f3;
+            min-height: 72px;
+          }
+          .mini-label {
+            font-size: 10px;
+            color: #7d7d8f;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+          }
+          .mini-number {
+            font-size: 20px;
+            font-weight: 800;
+            line-height: 1.2;
+          }
+          .mini-sub {
+            font-size: 11px;
+            color: #7d7d8f;
+            margin-top: 4px;
+          }
+          .goal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-weight: 800;
+            font-size: 16px;
+            margin-bottom: 8px;
+          }
+          .goal-value {
+            color: #ff6b6b;
+          }
+          .goal-note {
+            margin-top: 10px;
+            font-size: 12px;
+            color: #4d4d5f;
+          }
+          .acc-item {
+            padding: 4px 0;
+            border-bottom: 1px dashed #ece5dc;
+            font-size: 13px;
+          }
+          .acc-item:last-child { border-bottom: none; }
+          .empty {
+            font-size: 13px;
+            color: #77778d;
+          }
+          .minutes-summary {
+            font-size: 13px;
+            color: #4d4d5f;
+            margin-top: 8px;
+          }
+          .footer {
+            margin-top: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 11px;
+            color: #7d7d8f;
+            border-top: 1px solid #ece5dc;
+            padding-top: 10px;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="report">
+          <div class="report-header">
+            <div>
+              <div class="report-name">${student.name}</div>
+              <div class="report-meta">Progress Report · Generated ${today}</div>
+            </div>
+            <span class="badge"></span>
+          </div>
+
+          <div class="section">
+            <div class="section-title">Minutes</div>
+            ${minuteEntries.length ? `<div class="minutes-summary">${totalMinutes} minutes total${minuteSummary.length ? ` · ${minuteSummary.map(([label, total]) => `${label}: ${total} min`).join(" · ")}` : ""}</div>` : "<div class=\"empty\">No minutes recorded</div>"}
+          </div>
+
+          ${goalMarkup}
+
+          <div class="section">
+            <div class="section-title">Accommodations</div>
+            ${accMarkup}
+          </div>
+
+          <div class="footer">
+            <span>Progress Monitor</span>
+            <span>${today}</span>
+          </div>
+        </div>
+      </body>
+      </html>`;
+
+    const iframe = document.createElement("iframe");
+    iframe.setAttribute("title", "Progress report print");
+    iframe.style.position = "fixed";
+    iframe.style.width = "0";
+    iframe.style.height = "0";
+    iframe.style.border = "0";
+    iframe.style.opacity = "0";
+    iframe.style.pointerEvents = "none";
+    iframe.srcdoc = printHtml;
+    document.body.appendChild(iframe);
+
+    iframe.onload = () => {
+      try {
+        iframe.contentWindow?.focus();
+        iframe.contentWindow?.print();
+      } catch (error) {
+        console.error("Failed to print report", error);
+      }
+
+      setTimeout(() => {
+        iframe.remove();
+      }, 1000);
+    };
+  };
   const importJSON=e=>{
     const f=e.target.files[0];if(!f) return;
     const r=new FileReader();
@@ -1111,14 +1573,20 @@ export default function App(){
     r.readAsText(f);
   };
   useEffect(()=>{
-    if(renameTarget){ setRenameValue(renameTarget.currentName ?? ""); }
+    if(renameTarget){
+      setRenameValue(renameTarget.currentName ?? "");
+      setRenameEmoji(renameTarget.currentEmoji ?? "");
+    }
   },[renameTarget]);
   const saveRename=()=>{
     const nextName = renameValue.trim();
     if(!renameTarget || !nextName) return;
 
     if(renameTarget.type === "student"){
-      upd(d => { d[renameTarget.studentIndex].name = nextName; });
+      upd(d => {
+        d[renameTarget.studentIndex].name = nextName;
+        d[renameTarget.studentIndex].emoji = renameEmoji.trim() || d[renameTarget.studentIndex].emoji || getEmoji(nextName);
+      });
     }
     if(renameTarget.type === "goal"){
       upd(d => { d[renameTarget.studentIndex].charts[renameTarget.goalIndex].name = nextName; });
@@ -1126,8 +1594,14 @@ export default function App(){
 
     setRenameTarget(null);
     setRenameValue("");
+    setRenameEmoji("");
   };
   const handleSelectStudent=si=>{setSelSet(si);setSelChart(0);setActiveTab("goals");setView("student");};
+  const toggleSidebarGroup = key => setSidebarGroupCollapsed(prev => ({ ...prev, [key]: !prev[key] }));
+  const sidebarSections = [
+    ...groups.map(group => ({ id: group.id, name: group.name, students: sets.filter(student => student.groupId === group.id) })),
+    { id: "ungrouped", name: "Ungrouped", students: sets.filter(student => !student.groupId || !groups.some(group => group.id === student.groupId)) },
+  ];
 
   // ── Keyboard shortcuts ──
   useEffect(()=>{
@@ -1166,61 +1640,149 @@ export default function App(){
 
         <div style={{flex:1,overflowY:"auto",padding:"8px 12px 0"}}>
           <SectionLabel>Students</SectionLabel>
-          <div style={{display:"flex",flexDirection:"column",gap:7}}>
-            {sets.map((s,si)=>{
-              const p=getPal(si);
-              const isActive=view==="student"&&selSet===si;
-              return(
-                <div key={si} style={{borderRadius:"var(--r)",border:`2px solid ${isActive?p.border:"var(--border)"}`,overflow:"hidden",transition:"border-color .15s"}}>
-                  <div onClick={()=>handleSelectStudent(si)} style={{display:"flex",alignItems:"center",gap:9,padding:"9px 11px",background:isActive?p.bg:"transparent",cursor:"pointer",transition:"background .15s"}}>
-                    <div style={{width:30,height:30,borderRadius:"50%",background:`linear-gradient(135deg,${p.chip},${p.chip}99)`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,flexShrink:0}}>{getEmoji(s.name)}</div>
-                    <div style={{flex:1,overflow:"hidden"}}>
-                      <div style={{fontFamily:"var(--font-head)",fontWeight:800,fontSize:13,color:isActive?p.text:"var(--ink)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.name}</div>
-                      <div style={{fontSize:11,color:"var(--ink-soft)"}}>{s.charts.length} goal{s.charts.length!==1?"s":""}</div>
-                    </div>
-                    <div style={{display:"flex",gap:1}}>
-                      <button onClick={e=>{e.stopPropagation();setRenameTarget({type:"student",studentIndex:si,currentName:s.name});}} style={{background:"none",border:"none",cursor:"pointer",fontSize:12,opacity:.45,padding:"2px"}}>✏️</button>
-                      <button onClick={e=>{e.stopPropagation();requestConfirm({title:"Remove student?",message:`This will delete ${s.name} and all of their data.`,confirmLabel:"Remove",danger:true,onConfirm:()=>{upd(d=>d.splice(si,1));setSelSet(0);setSelChart(0);setView("dashboard");setConfirmDialog(null);}});}} style={{background:"none",border:"none",cursor:"pointer",fontSize:12,opacity:.45,padding:"2px"}}>🗑️</button>
-                    </div>
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {sidebarSections.map(section => (
+              <div
+                key={section.id}
+                draggable={Boolean(section.id !== "ungrouped")}
+                onDragStart={event => {
+                  if (section.id === "ungrouped") return;
+                  event.dataTransfer.setData("text/plain", section.id);
+                  event.dataTransfer.effectAllowed = "move";
+                }}
+                onDragOver={event => {
+                  if (section.id === "ungrouped") return;
+                  event.preventDefault();
+                }}
+                onDrop={event => {
+                  if (section.id === "ungrouped") return;
+                  event.preventDefault();
+                  const draggedId = event.dataTransfer.getData("text/plain");
+                  reorderGroups(draggedId, section.id);
+                }}
+                style={{borderRadius:"var(--r)",border:"2px solid var(--border)",overflow:"hidden",background:"var(--paper)",cursor: section.id === "ungrouped" ? "default" : "grab"}}
+              >
+                <div onClick={()=>toggleSidebarGroup(section.id)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"9px 10px",cursor:"pointer",background:"var(--cream)"}}>
+                  <span style={{fontFamily:"var(--font-head)",fontWeight:800,fontSize:12,color:"var(--ink)"}}>{section.name} ({section.students.length})</span>
+                  <div style={{display:"flex",alignItems:"center",gap:6}}>
+                    {section.id !== "ungrouped" && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={e => {
+                            e.stopPropagation();
+                            const nextName = window.prompt("Rename group", section.name);
+                            if (nextName !== null) renameGroup(section.id, nextName);
+                          }}
+                          style={{background:"none",border:"none",cursor:"pointer",fontSize:11,opacity:0.7,padding:0}}
+                          aria-label={`Rename group ${section.name}`}
+                        >✏️</button>
+                        <button
+                          type="button"
+                          onClick={e => {
+                            e.stopPropagation();
+                            requestConfirm({
+                              title: "Delete group?",
+                              message: `This will remove the group "${section.name}" and move any students in it back to Ungrouped.`,
+                              confirmLabel: "Delete",
+                              danger: true,
+                              onConfirm: () => deleteGroup(section.id),
+                            });
+                          }}
+                          style={{background:"none",border:"none",cursor:"pointer",fontSize:11,opacity:0.7,padding:0}}
+                          aria-label={`Delete group ${section.name}`}
+                        >🗑️</button>
+                      </>
+                    )}
+                    <span style={{fontSize:12,color:"var(--ink-soft)"}}>{sidebarGroupCollapsed[section.id] ? "▸" : "▾"}</span>
                   </div>
-                  {isActive&&(
-                    <div style={{background:p.bg,padding:"4px 10px 10px 50px",display:"flex",flexDirection:"column",gap:4}}>
-                      {s.charts.map((c,ci)=>{
-                        const isAC=activeTab==="goals"&&selChart===ci;
-                        return(
-                          <div key={ci} onClick={()=>{setSelChart(ci);setActiveTab("goals");}} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"5px 10px",borderRadius:99,background:isAC?p.chip:"transparent",border:`1.5px solid ${isAC?p.chip:p.border+"55"}`,cursor:"pointer",transition:"all .15s"}}>
-                            <span style={{fontFamily:"var(--font-head)",fontWeight:700,fontSize:12,color:isAC?"#fff":p.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1}}>{c.name}</span>
+                </div>
+                {!sidebarGroupCollapsed[section.id] && (
+                  <div style={{display:"flex",flexDirection:"column",gap:6,padding:"8px 8px 10px"}}>
+                    {section.students.length === 0 ? (
+                      <div style={{padding:"10px",border:"1.5px dashed var(--border)",borderRadius:8,color:"var(--ink-soft)",fontSize:11}}>No students here</div>
+                    ) : section.students.map((s,si)=>{
+                      const p=getPal(sets.indexOf(s));
+                      const isActive=view==="student"&&selSet===sets.indexOf(s);
+                      return (
+                        <div key={`${section.id}-${s.name}-${si}`} style={{borderRadius:"var(--r-sm)",border:`2px solid ${isActive?p.border:"var(--border)"}`,overflow:"hidden",transition:"border-color .15s"}}>
+                          <div onClick={()=>handleSelectStudent(sets.indexOf(s))} style={{display:"flex",alignItems:"center",gap:9,padding:"8px 8px",background:isActive?p.bg:"transparent",cursor:"pointer",transition:"background .15s"}}>
+                            <div style={{width:26,height:26,borderRadius:"50%",background:`linear-gradient(135deg,${p.chip},${p.chip}99)`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,flexShrink:0}}>{getStudentEmoji(s)}</div>
+                            <div style={{flex:1,overflow:"hidden"}}>
+                              <div style={{fontFamily:"var(--font-head)",fontWeight:800,fontSize:12,color:isActive?p.text:"var(--ink)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.name}</div>
+                              <div style={{fontSize:10,color:"var(--ink-soft)"}}>{s.charts.length} goal{s.charts.length!==1?"s":""}</div>
+                            </div>
                             <div style={{display:"flex",gap:1}}>
-                              <button onClick={e=>{e.stopPropagation();setRenameTarget({type:"goal",studentIndex:si,goalIndex:ci,currentName:c.name});}} style={{background:"none",border:"none",cursor:"pointer",fontSize:10,opacity:isAC?.75:.35,padding:"1px 2px",color:isAC?"#fff":"inherit"}}>✏️</button>
-                              <button onClick={e=>{e.stopPropagation();requestConfirm({title:"Delete goal?",message:`This will remove the goal "${c.name}" from this student.`,confirmLabel:"Delete",danger:true,onConfirm:()=>{upd(d=>d[si].charts.splice(ci,1));setSelChart(0);setConfirmDialog(null);}});}} style={{background:"none",border:"none",cursor:"pointer",fontSize:10,opacity:isAC?.75:.35,padding:"1px 2px",color:isAC?"#fff":"inherit"}}>✕</button>
+                              <button onClick={e=>{e.stopPropagation();setRenameTarget({type:"student",studentIndex:sets.indexOf(s),currentName:s.name,currentEmoji:s.emoji ?? getStudentEmoji(s)});}} style={{background:"none",border:"none",cursor:"pointer",fontSize:11,opacity:.45,padding:"2px"}}>✏️</button>
+                              <button onClick={e=>{e.stopPropagation();requestConfirm({title:"Remove student?",message:`This will delete ${s.name} and all of their data.`,confirmLabel:"Remove",danger:true,onConfirm:()=>{upd(d=>d.splice(sets.indexOf(s),1));setSelSet(0);setSelChart(0);setView("dashboard");setConfirmDialog(null);}});}} style={{background:"none",border:"none",cursor:"pointer",fontSize:11,opacity:.45,padding:"2px"}}>🗑️</button>
                             </div>
                           </div>
-                        );
-                      })}
-                      <button onClick={()=>setShowAG(true)} style={{background:"none",border:`1.5px dashed ${p.border}88`,borderRadius:99,color:p.text,fontSize:11,fontFamily:"var(--font-head)",fontWeight:700,padding:"4px 10px",marginTop:2,cursor:"pointer",alignSelf:"flex-start"}}>+ Goal</button>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+                          {isActive&&(
+                            <div style={{background:p.bg,padding:"4px 10px 10px 40px",display:"flex",flexDirection:"column",gap:4}}>
+                              {s.charts.map((c,ci)=>{
+                                const isAC=activeTab==="goals"&&selChart===ci;
+                                return(
+                                  <div key={ci} onClick={()=>{setSelChart(ci);setActiveTab("goals");}} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"5px 10px",borderRadius:99,background:isAC?p.chip:"transparent",border:`1.5px solid ${isAC?p.chip:p.border+"55"}`,cursor:"pointer",transition:"all .15s"}}>
+                                    <span style={{fontFamily:"var(--font-head)",fontWeight:700,fontSize:11,color:isAC?"#fff":p.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1}}>{c.name}</span>
+                                    <div style={{display:"flex",gap:1}}>
+                                      <button onClick={e=>{e.stopPropagation();setRenameTarget({type:"goal",studentIndex:sets.indexOf(s),goalIndex:ci,currentName:c.name});}} style={{background:"none",border:"none",cursor:"pointer",fontSize:9,opacity:isAC?.75:.35,padding:"1px 2px",color:isAC?"#fff":"inherit"}}>✏️</button>
+                                      <button onClick={e=>{e.stopPropagation();requestConfirm({title:"Delete goal?",message:`This will remove the goal "${c.name}" from this student.`,confirmLabel:"Delete",danger:true,onConfirm:()=>{upd(d=>d[sets.indexOf(s)].charts.splice(ci,1));setSelChart(0);setConfirmDialog(null);}});}} style={{background:"none",border:"none",cursor:"pointer",fontSize:9,opacity:isAC?.75:.35,padding:"1px 2px",color:isAC?"#fff":"inherit"}}>✕</button>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                              <button onClick={()=>setShowAG(true)} style={{background:"none",border:`1.5px dashed ${p.border}88`,borderRadius:99,color:p.text,fontSize:10,fontFamily:"var(--font-head)",fontWeight:700,padding:"4px 10px",marginTop:2,cursor:"pointer",alignSelf:"flex-start"}}>+ Goal</button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         </div>
 
-        <div style={{padding:"12px",borderTop:"2px solid var(--border)",display:"flex",flexDirection:"column",gap:7}}>
-          <button className="action-btn" onClick={()=>setShowAS(true)} style={{background:"var(--teal)",color:"#fff",justifyContent:"center",width:"100%"}}>+ Add Student</button>
-          <button className="ghost-btn" onClick={()=>setShowMinuteOptions(true)} style={{justifyContent:"center",fontSize:11}}>⏱ Minutes Options</button>
-          <div style={{display:"flex",gap:6}}>
-            <button className="ghost-btn" onClick={exportJSON} style={{flex:1,justifyContent:"center"}}>↓ Export</button>
-            <label className="ghost-btn" style={{flex:1,justifyContent:"center",cursor:"pointer"}}>↑ Import<input type="file" accept=".json" onChange={importJSON} style={{display:"none"}}/></label>
+        <div style={{padding:"12px",borderTop:"2px solid var(--border)"}}>
+          <div onClick={()=>setSidebarControlsCollapsed(value => !value)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer",padding:"4px 2px 8px",userSelect:"none"}}>
+            <span style={{fontFamily:"var(--font-head)",fontWeight:800,fontSize:12,color:"var(--ink-soft)",letterSpacing:"0.08em",textTransform:"uppercase"}}>Quick Tools</span>
+            <span style={{fontSize:12,color:"var(--ink-soft)"}}>{sidebarControlsCollapsed ? "▸" : "▾"}</span>
           </div>
-          <button className="ghost-btn" onClick={()=>setShowShortcuts(true)} style={{justifyContent:"center",fontSize:11}}>⌨ Shortcuts</button>
+          {!sidebarControlsCollapsed && (
+            <div style={{display:"flex",flexDirection:"column",gap:7}}>
+              <button className="action-btn" onClick={()=>setShowAS(true)} style={{background:"var(--teal)",color:"#fff",justifyContent:"center",width:"100%"}}>+ Add Student</button>
+              <button className="ghost-btn" onClick={()=>setShowGroupModal(true)} style={{justifyContent:"center",fontSize:11}}>+ Add Group</button>
+              <button className="ghost-btn" onClick={()=>setShowMinuteOptions(true)} style={{justifyContent:"center",fontSize:11}}>⏱ Minutes Options</button>
+              <div style={{display:"flex",gap:6}}>
+                <button className="ghost-btn" onClick={exportJSON} style={{flex:1,justifyContent:"center"}}>↓ Export</button>
+                <label className="ghost-btn" style={{flex:1,justifyContent:"center",cursor:"pointer"}}>↑ Import<input type="file" accept=".json" onChange={importJSON} style={{display:"none"}}/></label>
+              </div>
+              <button className="ghost-btn" onClick={()=>setShowShortcuts(true)} style={{justifyContent:"center",fontSize:11}}>⌨ Shortcuts</button>
+            </div>
+          )}
         </div>
       </div>
 
       {/* MAIN */}
       <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
         {view==="dashboard"?(
-          <Dashboard sets={sets} onSelectStudent={handleSelectStudent} onAddStudent={()=>setShowAS(true)} getPal={getPal} getEmoji={getEmoji}/>
+          <Dashboard
+            sets={sets}
+            onSelectStudent={handleSelectStudent}
+            onAddStudent={()=>setShowAS(true)}
+            getPal={getPal}
+            getStudentEmoji={getStudentEmoji}
+            onUpdateStudentGroup={updateStudentGroup}
+            groups={groups}
+            onOpenGroupModal={()=>setShowGroupModal(true)}
+            homeSearch={homeSearch}
+            setHomeSearch={setHomeSearch}
+            homeAccommodation={homeAccommodation}
+            setHomeAccommodation={setHomeAccommodation}
+            homeGroupFilter={homeGroupFilter}
+            setHomeGroupFilter={setHomeGroupFilter}
+          />
         ):student?(
           <>
             {/* Topbar */}
@@ -1270,10 +1832,28 @@ export default function App(){
       {/* MODALS */}
       <Modal show={showAS} onClose={()=>setShowAS(false)} title="Add Student" emoji="🎒">
         <SectionLabel>Student Name</SectionLabel>
-        <input type="text" placeholder="e.g. Jordan Smith" value={newSName} onChange={e=>setNewSName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addStudent()} style={{marginTop:6,marginBottom:16}} autoFocus/>
-        <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+        <input type="text" placeholder="e.g. Jordan Smith" value={newSName} onChange={e=>setNewSName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addStudent()} style={{marginTop:6}} autoFocus/>
+
+        <div style={{marginTop:14}}>
+          <SectionLabel>Custom Emoji</SectionLabel>
+          <div style={{display:"flex",gap:8,marginTop:6}}>
+            <input type="text" placeholder="e.g. 🦋 or ⭐" value={newSEmoji} onChange={e=>setNewSEmoji(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addStudent()} style={{flex:1}} />
+            <button className="ghost-btn" type="button" onClick={()=>{setEmojiTarget({source:"newStudent", setter:setNewSEmoji}); setShowEmojiPicker(true);}} style={{padding:"0 12px"}}>🎨</button>
+          </div>
+        </div>
+
+        <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:16}}>
           <button className="ghost-btn" onClick={()=>setShowAS(false)}>Cancel</button>
           <button className="action-btn" onClick={addStudent} style={{background:"var(--teal)",color:"#fff"}}>Add Student ✓</button>
+        </div>
+      </Modal>
+
+      <Modal show={showGroupModal} onClose={()=>{setShowGroupModal(false); setNewGroupName("");}} title="Add Group" emoji="👥">
+        <SectionLabel>Group Name</SectionLabel>
+        <input type="text" value={newGroupName} onChange={e=>setNewGroupName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addGroup()} placeholder="e.g. 3rd Grade" style={{marginTop:6,marginBottom:16}} autoFocus/>
+        <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+          <button className="ghost-btn" onClick={()=>{setShowGroupModal(false); setNewGroupName("");}}>Cancel</button>
+          <button className="action-btn" onClick={addGroup} style={{background:"var(--yellow)",color:"#2d2d3a"}}>Add Group ✓</button>
         </div>
       </Modal>
 
@@ -1316,23 +1896,42 @@ export default function App(){
         </div>
       </Modal>
 
-      <Modal show={!!renameTarget} onClose={()=>{setRenameTarget(null);setRenameValue("");}} title={renameTarget?.type === "student" ? "Rename Student" : "Rename Goal"} emoji="✏️">
-        <SectionLabel>{renameTarget?.type === "student" ? "Student Name" : "Goal Name"}</SectionLabel>
-        <input type="text" value={renameValue} onChange={e=>setRenameValue(e.target.value)} onKeyDown={e=>e.key==="Enter"&&saveRename()} style={{marginTop:6,marginBottom:16}} autoFocus/>
-        <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
-          <button className="ghost-btn" onClick={()=>{setRenameTarget(null);setRenameValue("");}}>Cancel</button>
+      <Modal show={!!renameTarget} onClose={()=>{setRenameTarget(null);setRenameValue("");setRenameEmoji("");}} title={renameTarget?.type === "student" ? "Rename Student" : "Rename Goal"} emoji="✏️">
+        {renameTarget?.type === "student" ? (
+          <>
+            <SectionLabel>Student Name</SectionLabel>
+            <input type="text" value={renameValue} onChange={e=>setRenameValue(e.target.value)} onKeyDown={e=>e.key==="Enter"&&saveRename()} style={{marginTop:6}} autoFocus/>
+
+            <div style={{marginTop:14}}>
+              <SectionLabel>Custom Emoji</SectionLabel>
+              <div style={{display:"flex",gap:8,marginTop:6}}>
+                <input type="text" value={renameEmoji} onChange={e=>setRenameEmoji(e.target.value)} onKeyDown={e=>e.key==="Enter"&&saveRename()} style={{flex:1}} placeholder="e.g. 🦋 or ⭐" />
+                <button className="ghost-btn" type="button" onClick={()=>{setEmojiTarget({source:"renameStudent", setter:setRenameEmoji}); setShowEmojiPicker(true);}} style={{padding:"0 12px"}}>🎨</button>
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            <SectionLabel>Goal Name</SectionLabel>
+            <input type="text" value={renameValue} onChange={e=>setRenameValue(e.target.value)} onKeyDown={e=>e.key==="Enter"&&saveRename()} style={{marginTop:6,marginBottom:16}} autoFocus/>
+          </>
+        )}
+        <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:16}}>
+          <button className="ghost-btn" onClick={()=>{setRenameTarget(null);setRenameValue("");setRenameEmoji("");}}>Cancel</button>
           <button className="action-btn" onClick={saveRename} style={{background:"var(--teal)",color:"#fff"}}>Save ✓</button>
         </div>
       </Modal>
 
-      <Modal show={!!renameTarget} onClose={()=>{setRenameTarget(null);setRenameValue("");}} title={renameTarget?.type === "student" ? "Rename Student" : "Rename Goal"} emoji="✏️">
-        <SectionLabel>{renameTarget?.type === "student" ? "Student Name" : "Goal Name"}</SectionLabel>
-        <input type="text" value={renameValue} onChange={e=>setRenameValue(e.target.value)} onKeyDown={e=>e.key==="Enter"&&saveRename()} style={{marginTop:6,marginBottom:16}} autoFocus/>
-        <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
-          <button className="ghost-btn" onClick={()=>{setRenameTarget(null);setRenameValue("");}}>Cancel</button>
-          <button className="action-btn" onClick={saveRename} style={{background:"var(--teal)",color:"#fff"}}>Save ✓</button>
-        </div>
-      </Modal>
+      <EmojiPickerModal
+        show={showEmojiPicker}
+        onClose={()=>{setShowEmojiPicker(false); setEmojiTarget(null);}}
+        selected={emojiTarget?.source === "newStudent" ? newSEmoji : emojiTarget?.source === "renameStudent" ? renameEmoji : ""}
+        onSelect={emoji => {
+          if (emojiTarget?.setter) emojiTarget.setter(emoji);
+          setShowEmojiPicker(false);
+          setEmojiTarget(null);
+        }}
+      />
 
       <Modal show={showAtt} onClose={()=>setShowAtt(false)} title="Attachments" emoji="📎">
         {chart&&(
@@ -1377,7 +1976,7 @@ export default function App(){
         </div>
       </Modal>
 
-      <ReportModal show={showReport} onClose={()=>setShowReport(false)} sets={sets} selSet={selSet}/>
+      <ReportModal show={showReport} onClose={()=>setShowReport(false)} sets={sets} selSet={selSet} onPrint={printStudentReport} />
     </div>
   );
 }
