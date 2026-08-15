@@ -24,6 +24,8 @@ css.textContent = `
     --r:12px; --r-sm:8px; --r-lg:18px;
   }
   body { font-family:var(--font-body); background:var(--cream); color:var(--ink); min-height:100vh; display:block; }
+  .report-page{break-before:page;page-break-before:always;}
+  .report-page:first-child{break-before:auto;page-break-before:auto;}
   input,textarea { font-family:var(--font-body); color:var(--ink); background:var(--paper); border:2px solid var(--border); border-radius:var(--r-sm); padding:8px 12px; font-size:14px; outline:none; width:100%; transition:border-color .15s,box-shadow .15s; }
   input:focus,textarea:focus { border-color:var(--teal); box-shadow:0 0 0 3px rgba(38,198,176,.15); }
   select { font-family:var(--font-body); color:var(--ink); background:var(--paper); border:2px solid var(--border); border-radius:var(--r-sm); padding:7px 10px; font-size:13px; outline:none; cursor:pointer; }
@@ -507,6 +509,7 @@ function Dashboard({
   onUpdateStudentGroup,
   groups,
   onOpenGroupModal,
+  onOpenBulkReport,
   homeSearch,
   setHomeSearch,
   homeAccommodation,
@@ -516,6 +519,8 @@ function Dashboard({
 }){
   const thisYear = currentYear();
   const [dashboardGroupCollapsed, setDashboardGroupCollapsed] = useState({});
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
   const allAccommodations = [...new Set(sets.flatMap(student => (student.accommodations ?? []).map(item => item.name.trim())).filter(Boolean))].sort((a, b) => a.localeCompare(b));
 
   const filteredStudents = sets.filter(student => {
@@ -591,10 +596,11 @@ function Dashboard({
     <div style={{ flex: 1, overflow: "auto", padding: "24px 28px" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18, flexWrap: "wrap", gap: 12 }}>
         <div>
-          <div style={{ fontFamily: "var(--font-head)", fontWeight: 900, fontSize: 22 }}>👋 Good morning!</div>
+          <div style={{ fontFamily: "var(--font-head)", fontWeight: 900, fontSize: 22 }}>👋 {greeting}!</div>
           <div style={{ fontSize: 13, color: "var(--ink-soft)", marginTop: 2 }}>Here’s your class at a glance.</div>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <button className="ghost-btn" onClick={onOpenBulkReport} style={{ background: "#eafaf6", color: "var(--teal)", borderColor: "#bce7dd" }}>🖨 Print All Reports</button>
           <button className="action-btn" onClick={onOpenGroupModal} style={{ background: "var(--yellow)", color: "#2d2d3a" }}>+ Add Group</button>
           <button className="action-btn" onClick={onAddStudent} style={{ background: "var(--teal)", color: "#fff" }}>+ Add Student</button>
         </div>
@@ -696,10 +702,65 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
   const [newVal,setNewVal]=useState("");
   const [newDate,setNewDate]=useState(todayStr);
   const [newNote,setNewNote]=useState("");
+  const [dateDrafts,setDateDrafts]=useState({ startDate: "", goalDate: "" });
   const [viewYear,setViewYear]=useState(currentYear);
   const [showQL,setShowQL]=useState(false); // quick log modal
+
+  const normalizeDateDigits = value => String(value ?? "").replace(/\D/g, "").slice(0, 8);
+  const formatDateDraft = value => {
+    const digits = normalizeDateDigits(value);
+    if (!digits) return "";
+    if (digits.length <= 2) return digits;
+    if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+    return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4, 8)}`;
+  };
+  const parseDateDigits = value => {
+    const digits = normalizeDateDigits(value);
+    if (digits.length !== 8) return null;
+
+    const month = Number(digits.slice(0, 2));
+    const day = Number(digits.slice(2, 4));
+    const year = Number(digits.slice(4, 8));
+    if (month < 1 || month > 12 || day < 1 || day > 31 || year < 1000) return null;
+
+    const parsed = new Date(year, month - 1, day);
+    if (parsed.getFullYear() !== year || parsed.getMonth() !== month - 1 || parsed.getDate() !== day) return null;
+    return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  };
   const [selectedPointIndex,setSelectedPointIndex]=useState(null);
   const [pointToDelete,setPointToDelete]=useState(null);
+
+  const parseDateInput = value => {
+    if (!value || typeof value !== "string") return null;
+    const normalized = value.trim();
+    if (!normalized) return null;
+
+    if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+      const parsed = new Date(`${normalized}T12:00:00`);
+      return Number.isNaN(parsed.getTime()) ? null : normalized;
+    }
+
+    return parseDateDigits(normalized);
+  };
+
+  const formatDateInput = value => {
+    if (!value || typeof value !== "string") return "";
+    const digits = normalizeDateDigits(value);
+    if (!digits) return "";
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      const [year, month, day] = value.split("-");
+      return `${month}/${day}/${year}`;
+    }
+    return formatDateDraft(digits);
+  };
+
+  useEffect(() => {
+    if (!chart) return;
+    setDateDrafts({
+      startDate: formatDateDraft(chart.startDate || ""),
+      goalDate: formatDateDraft(chart.goalDate || ""),
+    });
+  }, [chart?.startDate, chart?.goalDate]);
 
   // Derive available years from data
   const allPts=chart?.data??[];
@@ -774,6 +835,18 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
     }
   };
 
+  const parseChartDate = value => {
+    if (!value || typeof value !== "string") return null;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+    const parsed = new Date(`${value}T12:00:00`);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return parsed;
+  };
+
+  const startChartDate = parseChartDate(chart?.startDate);
+  const goalChartDate = parseChartDate(chart?.goalDate);
+  const hasValidTargetDates = Boolean(startChartDate && goalChartDate && startChartDate.getTime() <= goalChartDate.getTime());
+
   const chartData={
     datasets:[
       {label:chart?.name??"Progress",data:pts,borderColor:pal.chip,backgroundColor:pal.chip+"22",tension:0.35,fill:true,
@@ -782,7 +855,7 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
          return absIndex===selectedPointIndex ? 8 : p.notes ? 7 : 5;
        }),pointHoverRadius:9,pointBackgroundColor:pts.map(p=>p.notes?pal.chip:"#fff"),
        pointBorderColor:pts.map(p=>p.notes?pal.chip:pal.chip),pointBorderWidth:pts.map(p=>p.notes?0:2),pointHitRadius:14},
-      chart?.startDate&&chart?.goalDate&&{label:"🎯 Target",data:[{x:chart.startDate,y:chart.startValue},{x:chart.goalDate,y:chart.goalValue}],
+      hasValidTargetDates && {label:"🎯 Target",data:[{x:startChartDate,y:chart.startValue},{x:goalChartDate,y:chart.goalValue}],
         borderColor:"#52c97a",borderDash:[6,4],borderWidth:2,fill:false,pointRadius:4,pointBackgroundColor:"#52c97a"},
     ].filter(Boolean),
   };
@@ -888,7 +961,29 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
             <div style={{fontFamily:"var(--font-head)",fontWeight:800,fontSize:11,color:"var(--ink-soft)",marginBottom:10,textTransform:"uppercase",letterSpacing:"0.07em"}}>🎯 Goal Setup</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
               {[{label:"Baseline %",val:chart.startValue,key:"startValue",type:"number"},{label:"Baseline Date",val:chart.startDate,key:"startDate",type:"date"},{label:"Goal %",val:chart.goalValue,key:"goalValue",type:"number"},{label:"Goal Date",val:chart.goalDate,key:"goalDate",type:"date"}].map(({label,val,key,type})=>(
-                <div key={key}><SectionLabel>{label}</SectionLabel><input type={type} value={val||""} onChange={e=>upd(d=>d[selSet].charts[selChart][key]=type==="number"?Number(e.target.value):e.target.value)} style={{fontSize:13}}/></div>
+                <div key={key}><SectionLabel>{label}</SectionLabel><input
+                  type={type}
+                  value={key === "startValue" || key === "goalValue" ? (val ?? "") : (val || "")}
+                  onChange={e=>{
+                    if (key === "startValue" || key === "goalValue") {
+                      upd(d=>d[selSet].charts[selChart][key]=Number(e.target.value));
+                      return;
+                    }
+
+                    const value = e.target.value;
+                    if (!value || !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(value)) return;
+
+                    const parsed = new Date(`${value}T12:00:00`);
+                    if (Number.isNaN(parsed.getTime())) return;
+
+                    if (key === "goalDate" && chart?.startDate && new Date(`${chart.startDate}T12:00:00`).getTime() > parsed.getTime()) {
+                      return;
+                    }
+
+                    upd(d=>d[selSet].charts[selChart][key]=value);
+                  }}
+                  style={{fontSize:13}}
+                /></div>
               ))}
             </div>
           </div>
@@ -1236,6 +1331,8 @@ export default function App(){
   const [showAS,setShowAS]=useState(false);
   const [showAG,setShowAG]=useState(false);
   const [showReport,setShowReport]=useState(false);
+  const [bulkReportOpen,setBulkReportOpen]=useState(false);
+  const [bulkSelectedStudentIds,setBulkSelectedStudentIds]=useState([]);
   const [showShortcuts,setShowShortcuts]=useState(false);
   const [showMinuteOptions,setShowMinuteOptions]=useState(false);
   const [confirmDialog,setConfirmDialog]=useState(null);
@@ -1269,10 +1366,53 @@ export default function App(){
     }catch{return DEFAULT_MINUTE_OPTIONS;}
   });
   const chartRef=useRef(null);
+  const isValidDateValue = value => {
+    if (!value || typeof value !== "string") return false;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+    const parsed = new Date(`${value}T12:00:00`);
+    return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+  };
 
   const student=sets[selSet];
   const chart=student?.charts?.[selChart]??null;
   const pal=getPal(selSet);
+  const allStudentIds = sets.map((_, idx) => idx);
+
+  const openBulkReport = () => {
+    setBulkSelectedStudentIds(allStudentIds);
+    setBulkReportOpen(true);
+  };
+
+  const toggleBulkStudent = studentIndex => {
+    setBulkSelectedStudentIds(prev => {
+      const next = new Set(prev);
+      if (next.has(studentIndex)) next.delete(studentIndex);
+      else next.add(studentIndex);
+      return [...next];
+    });
+  };
+
+  const toggleBulkGroup = groupId => {
+    const studentIndexes = sets
+      .map((student, idx) => (groupId === "ungrouped"
+        ? (!student.groupId || !groups.some(group => group.id === student.groupId) ? idx : null)
+        : student.groupId === groupId ? idx : null))
+      .filter(index => index !== null);
+
+    setBulkSelectedStudentIds(prev => {
+      const next = new Set(prev);
+      const allSelected = studentIndexes.length > 0 && studentIndexes.every(index => next.has(index));
+      if (allSelected) {
+        studentIndexes.forEach(index => next.delete(index));
+      } else {
+        studentIndexes.forEach(index => next.add(index));
+      }
+      return [...next];
+    });
+  };
+
+  const selectAllBulkStudents = () => setBulkSelectedStudentIds(allStudentIds);
+  const clearBulkStudents = () => setBulkSelectedStudentIds([]);
 
   useEffect(()=>{localStorage.setItem("pm_v2",JSON.stringify(sets));},[sets]);
   useEffect(()=>{localStorage.setItem("pm_minute_options",JSON.stringify(minuteOptions));},[minuteOptions]);
@@ -1343,9 +1483,71 @@ export default function App(){
     setMinuteOptions(prev=>prev.filter(opt=>opt.id!==id));
   };
   const exportJSON=()=>{
+    const payload={version:1,groups,students:sets};
     const a=document.createElement("a");
-    a.href=URL.createObjectURL(new Blob([JSON.stringify(sets,null,2)],{type:"application/json"}));
+    a.href=URL.createObjectURL(new Blob([JSON.stringify(payload,null,2)],{type:"application/json"}));
     a.download="progress-data.json";a.click();
+  };
+  const buildStudentPrintMarkup=(student)=>{
+    const today = new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+    const minuteEntries = Array.isArray(student.minutes) ? student.minutes : [];
+    const totalMinutes = minuteEntries.reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+    const minuteSummary = Object.entries(minuteEntries.reduce((acc, entry) => {
+      const label = entry.label || "Other";
+      acc[label] = (acc[label] || 0) + Number(entry.amount || 0);
+      return acc;
+    }, {}));
+    const goalMarkup = (student.charts ?? []).map((c) => {
+      const pts = c.data ?? [];
+      const latest = pts[pts.length - 1];
+      const goalPct = latest && c.goalValue ? Math.round((latest.y / c.goalValue) * 100) : null;
+      return `
+        <section class="goal-block">
+          <div class="goal-header"><span>${(c.name ?? "Goal").replace(/[&<>\"']/g, s => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[s]))}</span><span class="goal-value">${latest ? `${latest.y}%` : "—"}</span></div>
+          <div class="mini-grid">
+            <div class="mini-box"><div class="mini-label">Baseline</div><div class="mini-number">${c.startValue ?? 0}%</div></div>
+            <div class="mini-box"><div class="mini-label">Goal</div><div class="mini-number">${c.goalValue ?? 0}%</div></div>
+            <div class="mini-box"><div class="mini-label">Progress to Goal</div><div class="mini-number">${goalPct != null ? `${goalPct}%` : "—"}</div></div>
+          </div>
+          ${(latest && latest.notes) ? `<div class="goal-note">Session note: ${latest.notes}</div>` : ""}
+          ${(c.notes) ? `<div class="goal-note goal-notes-block">Goal notes: ${c.notes}</div>` : ""}
+        </section>
+      `;
+    }).join("");
+    const accMarkup = (student.accommodations ?? []).length ? (student.accommodations ?? []).map((a, i) => `<div class="acc-item">${i + 1}. ${a.name}</div>`).join("") : "<div class=\"empty\">No accommodations recorded.</div>";
+    return `
+      <div class="report-page">
+        <div class="report">
+          <div class="report-header"><div><div class="report-name">${student.name}</div><div class="report-meta">Progress Report · Generated ${today}</div></div><span class="badge"></span></div>
+          <div class="section"><div class="section-title">Minutes</div>${minuteEntries.length ? `<div class="minutes-summary">${totalMinutes} minutes total${minuteSummary.length ? ` · ${minuteSummary.map(([label, total]) => `${label}: ${total} min`).join(" · ")}` : ""}</div>` : "<div class=\"empty\">No minutes recorded</div>"}</div>
+          ${goalMarkup}
+          <div class="section"><div class="section-title">Accommodations</div>${accMarkup}</div>
+          <div class="footer"><span>Progress Monitor</span><span>${today}</span></div>
+        </div>
+      </div>
+    `;
+  };
+  const printHtmlDocument=(contentHtml,title)=>{
+    const printHtml = `<!doctype html><html><head><meta charset="utf-8" /><title>${title}</title><style>@page{size:A4 portrait;margin:0.6in;}body{margin:0;background:#fff;color:#2d2d3a;font-family:"Segoe UI",Arial,sans-serif;line-height:1.4}.report-page{break-before:page;page-break-before:always}.report-page:first-child{break-before:auto;page-break-before:auto}.report{width:100%;max-width:100%;box-sizing:border-box}.report-header{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #e5dfd5;padding-bottom:10px;margin-bottom:18px}.report-name{font-size:20px;font-weight:900;color:#2d2d3a}.report-meta{font-size:12px;color:#6b6b7d;margin-top:2px}.badge{width:18px;height:18px;border-radius:6px;background:linear-gradient(135deg,#ff6b6b 0 16.66%,#ffd166 16.66% 33.32%,#52c97a 33.32% 49.98%,#4e9af1 49.98% 66.64%,#a78bfa 66.64% 83.3%,#ff9f6b 83.3% 100%);display:inline-block}.section{border:1px solid #e7e1d8;border-radius:12px;background:#fff;padding:14px 16px;margin-bottom:18px;box-sizing:border-box;page-break-inside:avoid;break-inside:avoid}.section-title{font-size:15px;font-weight:800;margin-bottom:10px}.mini-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:10px}.mini-box{border:1px solid #e7e1d8;border-radius:8px;padding:10px 12px;background:#faf7f3;min-height:72px}.mini-label{font-size:10px;color:#7d7d8f;letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px}.mini-number{font-size:20px;font-weight:800;line-height:1.2}.goal-header{display:flex;justify-content:space-between;align-items:center;font-weight:800;font-size:16px;margin-bottom:8px}.goal-value{color:#ff6b6b}.goal-note{margin-top:10px;font-size:12px;color:#4d4d5f;background:#fffaf0;border:1px solid #f8dd9a;border-radius:8px;padding:8px 10px}.goal-notes-block{background:#fff7f0;border-color:#f9c7a5}.acc-item{padding:4px 0;border-bottom:1px dashed #ece5dc;font-size:13px}.acc-item:last-child{border-bottom:none}.empty{font-size:13px;color:#77778d}.minutes-summary{font-size:13px;color:#4d4d5f;margin-top:8px}.footer{margin-top:20px;display:flex;justify-content:space-between;align-items:center;font-size:11px;color:#7d7d8f;border-top:1px solid #ece5dc;padding-top:10px}</style></head><body>${contentHtml}</body></html>`;
+    const iframe = document.createElement("iframe");
+    iframe.setAttribute("title", title);
+    iframe.style.position = "fixed";
+    iframe.style.width = "0";
+    iframe.style.height = "0";
+    iframe.style.border = "0";
+    iframe.style.opacity = "0";
+    iframe.style.pointerEvents = "none";
+    iframe.srcdoc = printHtml;
+    document.body.appendChild(iframe);
+    iframe.onload = () => {
+      try {
+        iframe.contentWindow?.focus();
+        iframe.contentWindow?.print();
+      } catch (error) {
+        console.error("Failed to print report", error);
+      }
+      setTimeout(() => iframe.remove(), 1000);
+    };
   };
   const printStudentReport = () => {
     const student = sets[selSet];
@@ -1577,10 +1779,33 @@ export default function App(){
       }, 1000);
     };
   };
+  const bulkPrintReports = () => {
+    if (!bulkSelectedStudentIds.length) return;
+    const selectedStudents = sets.filter((_, idx) => bulkSelectedStudentIds.includes(idx));
+    const pagesHtml = selectedStudents.map(student => buildStudentPrintMarkup(student)).join("");
+    if (!pagesHtml) return;
+    printHtmlDocument(pagesHtml, "Progress Monitor Class Reports");
+    setBulkReportOpen(false);
+  };
   const importJSON=e=>{
     const f=e.target.files[0];if(!f) return;
     const r=new FileReader();
-    r.onload=ev=>{try{const d=JSON.parse(ev.target.result);if(Array.isArray(d)){setSets(d);setSelSet(0);setSelChart(0);setView("dashboard");}else alert("Invalid file");}catch{alert("Couldn't read that file");}};
+    r.onload=ev=>{try{
+      const d=JSON.parse(ev.target.result);
+      const nextSets = Array.isArray(d) ? d : (d && Array.isArray(d.students) ? d.students : null);
+      if (!Array.isArray(nextSets)) throw new Error("Invalid file");
+      const normalizedSets = nextSets.map(student => ({
+        ...student,
+        accommodations: Array.isArray(student.accommodations) ? student.accommodations : [],
+        accDays: student.accDays ?? {},
+        minutes: Array.isArray(student.minutes) ? student.minutes : [],
+        charts: Array.isArray(student.charts) ? student.charts : [],
+        groupId: student.groupId ?? "",
+      }));
+      setSets(normalizedSets);
+      if (d && Array.isArray(d.groups)) setGroups(d.groups);
+      setSelSet(0); setSelChart(0); setView("dashboard");
+    }catch{alert("Couldn't read that file");}};
     r.readAsText(f);
   };
   useEffect(()=>{
@@ -1786,6 +2011,7 @@ export default function App(){
             onUpdateStudentGroup={updateStudentGroup}
             groups={groups}
             onOpenGroupModal={()=>setShowGroupModal(true)}
+            onOpenBulkReport={openBulkReport}
             homeSearch={homeSearch}
             setHomeSearch={setHomeSearch}
             homeAccommodation={homeAccommodation}
@@ -1987,6 +2213,157 @@ export default function App(){
       </Modal>
 
       <ReportModal show={showReport} onClose={()=>setShowReport(false)} sets={sets} selSet={selSet} onPrint={printStudentReport} />
+
+      <Modal show={bulkReportOpen} onClose={()=>setBulkReportOpen(false)} title="Print Class Reports" emoji="🖨" wide>
+        <div style={{display:"flex",flexDirection:"column",gap:18}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap",padding:"10px 12px",background:"var(--cream)",border:"1.5px solid var(--border)",borderRadius:12}}>
+            <div>
+              <div style={{fontFamily:"var(--font-head)",fontWeight:900,fontSize:16,color:"var(--ink)"}}>Select students to print</div>
+              <div style={{fontSize:12,color:"var(--ink-soft)",marginTop:2}}>{bulkSelectedStudentIds.length} student{bulkSelectedStudentIds.length === 1 ? "" : "s"} selected</div>
+            </div>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              <button className="ghost-btn" onClick={selectAllBulkStudents}>Select all</button>
+              <button className="ghost-btn" onClick={clearBulkStudents}>Clear</button>
+            </div>
+          </div>
+
+          <div style={{display:"flex",flexDirection:"column",gap:14}}>
+            {groups
+              .map(group => {
+                const groupStudentIndexes = sets
+                  .map((student, idx) => (student.groupId === group.id ? idx : null))
+                  .filter(index => index !== null);
+
+                if (groupStudentIndexes.length === 0) return null;
+
+                const checked = groupStudentIndexes.length > 0 && groupStudentIndexes.every(index => bulkSelectedStudentIds.includes(index));
+
+                return (
+                  <div
+                    key={group.id}
+                    onClick={()=>toggleBulkGroup(group.id)}
+                    style={{
+                      border:"1.5px solid var(--border)",
+                      borderRadius:14,
+                      padding:12,
+                      background: checked ? "linear-gradient(135deg, rgba(38,198,176,0.12), rgba(78,154,241,0.08))" : "var(--paper)",
+                      boxShadow: checked ? "0 6px 18px rgba(38,198,176,0.12)" : "0 2px 8px rgba(35,34,54,0.04)",
+                      cursor:"pointer",
+                      transition:"all .15s ease",
+                      borderColor: checked ? "rgba(38,198,176,0.75)" : "var(--border)",
+                    }}
+                  >
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginBottom:10}}>
+                      <div style={{display:"flex",alignItems:"center",gap:10}}>
+                        <div style={{width:18,height:18,borderRadius:6,border:"1.5px solid "+(checked?"var(--teal)":"var(--border)"),background:checked?"var(--teal)":"transparent",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:10}}>
+                          {checked ? "✓" : ""}
+                        </div>
+                        <div style={{fontFamily:"var(--font-head)",fontWeight:900,fontSize:18,color:"var(--ink)"}}>{group.name}</div>
+                      </div>
+                      <span style={{padding:"3px 8px",borderRadius:999,background:"var(--cream)",border:"1px solid var(--border)",fontSize:11,color:"var(--ink-soft)",fontWeight:700}}>{groupStudentIndexes.length}</span>
+                    </div>
+
+                    <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+                      {groupStudentIndexes.map(index => (
+                        <button
+                          key={index}
+                          type="button"
+                          onClick={event => {
+                            event.stopPropagation();
+                            toggleBulkStudent(index);
+                          }}
+                          style={{
+                            display:"inline-flex",
+                            alignItems:"center",
+                            justifyContent:"center",
+                            borderRadius:999,
+                            background: bulkSelectedStudentIds.includes(index) ? "rgba(38,198,176,0.18)" : "var(--cream)",
+                            border:"1.5px solid "+(bulkSelectedStudentIds.includes(index) ? "rgba(38,198,176,0.7)" : "var(--border)"),
+                            color:"var(--ink-mid)",
+                            fontSize:12,
+                            fontWeight:700,
+                            padding:"6px 10px",
+                            cursor:"pointer",
+                            transition:"all .15s ease",
+                          }}
+                        >
+                          {sets[index]?.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+
+            {(() => {
+              const ungroupedIndexes = sets
+                .map((student, idx) => (!student.groupId || !groups.some(group => group.id === student.groupId) ? idx : null))
+                .filter(index => index !== null);
+
+              if (ungroupedIndexes.length === 0) return null;
+
+              const checked = ungroupedIndexes.length > 0 && ungroupedIndexes.every(index => bulkSelectedStudentIds.includes(index));
+
+              return (
+                <div
+                  onClick={()=>toggleBulkGroup("ungrouped")}
+                  style={{
+                    border:"1.5px solid var(--border)",
+                    borderRadius:14,
+                    padding:12,
+                    background: checked ? "linear-gradient(135deg, rgba(38,198,176,0.12), rgba(78,154,241,0.08))" : "var(--paper)",
+                    boxShadow: checked ? "0 6px 18px rgba(38,198,176,0.12)" : "0 2px 8px rgba(35,34,54,0.04)",
+                    cursor:"pointer",
+                    transition:"all .15s ease",
+                    borderColor: checked ? "rgba(38,198,176,0.75)" : "var(--border)",
+                  }}
+                >
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginBottom:10}}>
+                    <div style={{display:"flex",alignItems:"center",gap:10}}>
+                      <div style={{width:18,height:18,borderRadius:6,border:"1.5px solid "+(checked?"var(--teal)":"var(--border)"),background:checked?"var(--teal)":"transparent",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:10}}>
+                        {checked ? "✓" : ""}
+                      </div>
+                      <div style={{fontFamily:"var(--font-head)",fontWeight:900,fontSize:18,color:"var(--ink)"}}>Ungrouped</div>
+                    </div>
+                    <span style={{padding:"3px 8px",borderRadius:999,background:"var(--cream)",border:"1px solid var(--border)",fontSize:11,color:"var(--ink-soft)",fontWeight:700}}>{ungroupedIndexes.length}</span>
+                  </div>
+
+                  <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+                    {ungroupedIndexes.map(index => (
+                      <button
+                        key={index}
+                        type="button"
+                        onClick={event => {
+                          event.stopPropagation();
+                          toggleBulkStudent(index);
+                        }}
+                        style={{
+                          display:"inline-flex",
+                          alignItems:"center",
+                          justifyContent:"center",
+                          borderRadius:999,
+                          background: bulkSelectedStudentIds.includes(index) ? "rgba(38,198,176,0.18)" : "var(--cream)",
+                          border:"1.5px solid "+(bulkSelectedStudentIds.includes(index) ? "rgba(38,198,176,0.7)" : "var(--border)"),
+                          color:"var(--ink-mid)",
+                          fontSize:12,
+                          fontWeight:700,
+                          padding:"6px 10px",
+                          cursor:"pointer",
+                          transition:"all .15s ease",
+                        }}
+                      >
+                        {sets[index]?.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+
+          <button className="action-btn" onClick={bulkPrintReports} style={{background:"var(--teal)",color:"#fff",justifyContent:"center",width:"100%",padding:"12px 18px",fontWeight:800}}>🖨 Print selected reports</button>
+        </div>
+      </Modal>
     </div>
   );
 }
