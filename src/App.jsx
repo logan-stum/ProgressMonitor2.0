@@ -1483,7 +1483,7 @@ export default function App(){
     setMinuteOptions(prev=>prev.filter(opt=>opt.id!==id));
   };
   const exportJSON=()=>{
-    const payload={version:1,groups,students:sets};
+    const payload={version:1,groups,students:sets,minuteOptions};
     const a=document.createElement("a");
     a.href=URL.createObjectURL(new Blob([JSON.stringify(payload,null,2)],{type:"application/json"}));
     a.download="progress-data.json";a.click();
@@ -1804,6 +1804,8 @@ export default function App(){
       }));
       setSets(normalizedSets);
       if (d && Array.isArray(d.groups)) setGroups(d.groups);
+      const importedMinuteOptions = Array.isArray(d?.minuteOptions) ? d.minuteOptions : (Array.isArray(d?.options) ? d.options : DEFAULT_MINUTE_OPTIONS);
+      setMinuteOptions(importedMinuteOptions.length ? importedMinuteOptions : DEFAULT_MINUTE_OPTIONS);
       setSelSet(0); setSelChart(0); setView("dashboard");
     }catch{alert("Couldn't read that file");}};
     r.readAsText(f);
