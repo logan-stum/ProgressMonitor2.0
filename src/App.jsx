@@ -571,11 +571,6 @@ function Dashboard({
 
   const renderStudentCard = (student, index) => {
     const p = getPal(index);
-    const allPts = student.charts.flatMap(c => c.data ?? []);
-    const latest = allPts[allPts.length - 1];
-    const thisMonthStr = `${thisYear}-${String(new Date().getMonth() + 1).padStart(2, "0")}`;
-    const monthPts = allPts.filter(pt => pt.x?.startsWith(thisMonthStr));
-    const streak = monthPts.length;
     const accList = student.accommodations ?? [];
     const hasAccommodations = accList.length > 0;
     const accDays = student.accDays ?? {};
@@ -586,7 +581,9 @@ function Dashboard({
     // Work out, per goal, whether the latest entry has fallen below the trend line connecting
     // baseline (date+value) to goal (date+value) — i.e. below where the student should be *today*
     // if on pace, not just below the final goal number.
-    // 2+ points under the trend line => red (critical), less than 2 but still under => yellow (watch).
+    // Severity is based on the two most recent points, not just magnitude:
+    //  - latest point below the line, but the point before it was on/above the line => yellow (new dip)
+    //  - latest point below the line, AND the point before it was also below the line => red (a trend)
     let redGoalCount = 0, yellowGoalCount = 0;
     const goalStatuses = student.charts.map(c => {
       const cPts = c.data ?? [];
@@ -597,7 +594,15 @@ function Dashboard({
       const diff = onTrackValue - cLatest.y;
       // Small epsilon so floating-point rounding on a point that's essentially right on the
       // trend line doesn't get flagged as "behind" by a fraction of a point.
-      const level = diff >= 2 ? "red" : diff > 0.05 ? "yellow" : null;
+      const EPS = 0.05;
+      let level = null;
+      if (diff > EPS) {
+        const cPrev = cPts[cPts.length - 2];
+        const prevOnTrackValue = cPrev ? getOnTrackValue(c, cPrev.x) : null;
+        const prevDiff = prevOnTrackValue != null ? prevOnTrackValue - cPrev.y : null;
+        const prevWasBelow = prevDiff != null && prevDiff > EPS;
+        level = prevWasBelow ? "red" : "yellow";
+      }
       if (level === "red") redGoalCount++;
       else if (level === "yellow") yellowGoalCount++;
       return { cPts, cLatest, level, diff, onTrackValue };
@@ -646,16 +651,16 @@ function Dashboard({
             <div key={ci} style={{ background: levelBg, borderRadius: 8, padding: "8px 10px", border: `1.5px solid ${levelColor ? levelColor : p.border + "44"}` }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
                 <span style={{ fontSize: 12, fontWeight: 700, color: theme.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, display: "flex", alignItems: "center", gap: 4 }}>
-                  {level && <span title={`${Math.round(diff * 10) / 10} pt${Math.round(diff * 10) / 10 !== 1 ? "s" : ""} behind pace`}>{level === "red" ? "🔴" : "🟡"}</span>}
+                  {level && <span title={level === "red" ? "Below target for two entries in a row" : "Newly below target"}>{level === "red" ? "🔴" : "🟡"}</span>}
                   {c.name}
                 </span>
                 <span style={{ fontFamily: "var(--font-head)", fontWeight: 900, fontSize: 14, color: levelColor || p.chip, flexShrink: 0, marginLeft: 6 }}>{cLatest.y}%</span>
               </div>
               {onTrackValue != null && (
                 <div style={{ fontSize: 10, color: levelColor || theme.subtle, marginBottom: 4 }}>
-                  {level
-                    ? `Target ${Math.round(onTrackValue * 10) / 10}% by ${cLatest.x} — ${Math.round(diff * 10) / 10} pt${Math.round(diff * 10) / 10 !== 1 ? "s" : ""} behind`
-                    : `On pace · target was ${Math.round(onTrackValue * 10) / 10}% as of ${cLatest.x}`}
+                  {level === "red" && `Target ${Math.round(onTrackValue * 10) / 10}% by ${cLatest.x} — below target 2 entries in a row`}
+                  {level === "yellow" && `Target ${Math.round(onTrackValue * 10) / 10}% by ${cLatest.x} — newly below target`}
+                  {!level && `On pace · target was ${Math.round(onTrackValue * 10) / 10}% as of ${cLatest.x}`}
                 </div>
               )}
               <Sparkline data={cPts} color={p.chip} />
@@ -667,11 +672,6 @@ function Dashboard({
             </div>
           );
         })}
-
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 11, color: theme.subtle, marginTop: 8 }}>
-          <span>{streak} this month</span>
-          <span>{latest ? `${latest.y}% latest` : "No data"}</span>
-        </div>
       </div>
     );
   };
