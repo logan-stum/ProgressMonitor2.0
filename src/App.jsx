@@ -499,6 +499,31 @@ function AccommodationsTab({student,selSet,upd,theme,pal}){
   );
 }
 
+// Parses a "YYYY-MM-DD" string into a Date at noon (avoids timezone edge cases), or null if invalid.
+function parseISODate(value) {
+  if (!value || typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const parsed = new Date(`${value}T12:00:00`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+// The goal is a trend line from (startDate, startValue) to (goalDate, goalValue) — not a flat
+// threshold. This returns what the student *should* be at on a given date if they're on pace.
+// Before the baseline date it's clamped to startValue; after the goal date it's clamped to goalValue.
+// Returns null when there isn't a full, valid baseline→goal trend line configured — in that case
+// there's nothing to compare against, so callers should skip flagging rather than fall back to a
+// flat number.
+function getOnTrackValue(chart, atDateStr) {
+  const atDate = parseISODate(atDateStr);
+  const startDate = parseISODate(chart?.startDate);
+  const goalDate = parseISODate(chart?.goalDate);
+  const hasTrendLine = atDate && startDate && goalDate && chart?.startValue != null && chart?.goalValue != null && startDate.getTime() <= goalDate.getTime();
+  if (!hasTrendLine) return null;
+  const span = goalDate.getTime() - startDate.getTime();
+  const t = span === 0 ? 1 : (atDate.getTime() - startDate.getTime()) / span;
+  const clampedT = Math.max(0, Math.min(1, t));
+  return chart.startValue + clampedT * (chart.goalValue - chart.startValue);
+}
+
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 function Dashboard({
   sets,
@@ -551,16 +576,39 @@ function Dashboard({
     const thisMonthStr = `${thisYear}-${String(new Date().getMonth() + 1).padStart(2, "0")}`;
     const monthPts = allPts.filter(pt => pt.x?.startsWith(thisMonthStr));
     const streak = monthPts.length;
+    const accList = student.accommodations ?? [];
+    const hasAccommodations = accList.length > 0;
     const accDays = student.accDays ?? {};
     const todayAcc = accDays[todayStr()];
     const accDone = !!(todayAcc && Object.keys(todayAcc).length > 0);
+    const accMissing = hasAccommodations && !accDone;
+
+    // Work out, per goal, whether the latest entry has fallen below the trend line connecting
+    // baseline (date+value) to goal (date+value) — i.e. below where the student should be *today*
+    // if on pace, not just below the final goal number.
+    // 2+ points under the trend line => red (critical), less than 2 but still under => yellow (watch).
+    let redGoalCount = 0, yellowGoalCount = 0;
+    const goalStatuses = student.charts.map(c => {
+      const cPts = c.data ?? [];
+      const cLatest = cPts[cPts.length - 1];
+      if (!cLatest) return { cPts, cLatest, level: null, diff: null, onTrackValue: null };
+      const onTrackValue = getOnTrackValue(c, cLatest.x);
+      if (onTrackValue == null) return { cPts, cLatest, level: null, diff: null, onTrackValue: null };
+      const diff = onTrackValue - cLatest.y;
+      // Small epsilon so floating-point rounding on a point that's essentially right on the
+      // trend line doesn't get flagged as "behind" by a fraction of a point.
+      const level = diff >= 2 ? "red" : diff > 0.05 ? "yellow" : null;
+      if (level === "red") redGoalCount++;
+      else if (level === "yellow") yellowGoalCount++;
+      return { cPts, cLatest, level, diff, onTrackValue };
+    });
 
     return (
       <div key={index} className="stu-card" draggable onDragStart={event => {
           event.dataTransfer.setData("text/plain", String(index));
           event.dataTransfer.effectAllowed = "move";
         }} onClick={() => onSelectStudent(index)} style={{
-          borderColor: p.border,
+          borderColor: accMissing || redGoalCount > 0 ? "var(--red)" : yellowGoalCount > 0 ? "var(--yellow)" : p.border,
           background: theme.card,
           boxShadow: `0 10px 25px ${theme.shadow}`,
           borderWidth: 2,
@@ -569,26 +617,51 @@ function Dashboard({
           <div style={{ width: 40, height: 40, borderRadius: "50%", background: `linear-gradient(135deg,${p.chip},${p.chip}99)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>{getStudentEmoji(student)}</div>
           <div style={{ flex: 1, overflow: "hidden" }}>
             <div style={{ fontFamily: "var(--font-head)", fontWeight: 800, fontSize: 15, color: theme.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{student.name}</div>
-            <div style={{ fontSize: 11, color: theme.subtle }}>{student.charts.length} goal{student.charts.length !== 1 ? "s" : ""}</div>
+            <div style={{ fontSize: 11, color: theme.subtle, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+              <span>{student.charts.length} goal{student.charts.length !== 1 ? "s" : ""}</span>
+              {redGoalCount > 0 && <span style={{ color: "var(--red)", fontWeight: 800 }}>🔴 {redGoalCount} behind pace</span>}
+              {redGoalCount === 0 && yellowGoalCount > 0 && <span style={{ color: "#9a6a00", fontWeight: 800 }}>🟡 {yellowGoalCount} behind pace</span>}
+            </div>
           </div>
-          {accDone && <span title="Accommodations logged today" style={{ fontSize: 16 }}>✅</span>}
+          {accDone ? (
+            <span title="Accommodations logged today" style={{ fontSize: 16 }}>✅</span>
+          ) : accMissing ? (
+            <span title="Accommodations not logged today" style={{ fontSize: 16 }}>⚠️</span>
+          ) : null}
         </div>
 
+        {accMissing && (
+          <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 10px", borderRadius: 8, background: "rgba(255,107,107,0.12)", border: "1.5px solid rgba(255,107,107,0.4)", fontSize: 11, fontWeight: 700, color: "#c0392b" }}>
+            <span>⚠️</span><span>Accommodations not logged today</span>
+          </div>
+        )}
+
         {student.charts.map((c, ci) => {
-          const cPts = c.data ?? [];
-          const cLatest = cPts[cPts.length - 1];
+          const { cPts, cLatest, level, diff, onTrackValue } = goalStatuses[ci];
           if (!cLatest) return null;
           const goalPct = c.goalValue ? Math.round((cLatest.y / c.goalValue) * 100) : null;
+          const levelColor = level === "red" ? "var(--red)" : level === "yellow" ? "var(--yellow)" : null;
+          const levelBg = level === "red" ? "rgba(255,107,107,0.10)" : level === "yellow" ? "rgba(255,209,102,0.16)" : theme.softPanel;
           return (
-            <div key={ci} style={{ background: theme.softPanel, borderRadius: 8, padding: "8px 10px", border: `1.5px solid ${p.border}44` }}>
+            <div key={ci} style={{ background: levelBg, borderRadius: 8, padding: "8px 10px", border: `1.5px solid ${levelColor ? levelColor : p.border + "44"}` }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-                <span style={{ fontSize: 12, fontWeight: 700, color: theme.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{c.name}</span>
-                <span style={{ fontFamily: "var(--font-head)", fontWeight: 900, fontSize: 14, color: p.chip, flexShrink: 0, marginLeft: 6 }}>{cLatest.y}%</span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: theme.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, display: "flex", alignItems: "center", gap: 4 }}>
+                  {level && <span title={`${Math.round(diff * 10) / 10} pt${Math.round(diff * 10) / 10 !== 1 ? "s" : ""} behind pace`}>{level === "red" ? "🔴" : "🟡"}</span>}
+                  {c.name}
+                </span>
+                <span style={{ fontFamily: "var(--font-head)", fontWeight: 900, fontSize: 14, color: levelColor || p.chip, flexShrink: 0, marginLeft: 6 }}>{cLatest.y}%</span>
               </div>
+              {onTrackValue != null && (
+                <div style={{ fontSize: 10, color: levelColor || theme.subtle, marginBottom: 4 }}>
+                  {level
+                    ? `Target ${Math.round(onTrackValue * 10) / 10}% by ${cLatest.x} — ${Math.round(diff * 10) / 10} pt${Math.round(diff * 10) / 10 !== 1 ? "s" : ""} behind`
+                    : `On pace · target was ${Math.round(onTrackValue * 10) / 10}% as of ${cLatest.x}`}
+                </div>
+              )}
               <Sparkline data={cPts} color={p.chip} />
               {goalPct !== null && (
                 <div style={{ marginTop: 5, height: 4, background: "var(--border)", borderRadius: 99, overflow: "hidden" }}>
-                  <div style={{ width: `${Math.min(goalPct, 100)}%`, height: "100%", background: p.chip, borderRadius: 99, transition: "width .4s ease" }} />
+                  <div style={{ width: `${Math.min(goalPct, 100)}%`, height: "100%", background: levelColor || p.chip, borderRadius: 99, transition: "width .4s ease" }} />
                 </div>
               )}
             </div>
