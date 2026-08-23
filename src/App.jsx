@@ -141,24 +141,24 @@ const getStudentEmoji = student => student?.emoji?.trim() || getEmoji(student?.n
 const clamp    = (v,lo,hi) => Math.max(lo,Math.min(hi,v));
 const sanitize = arr => (Array.isArray(arr)?arr:[]).map(p=>({...p,y:clamp(Number(p.y),0,100)})).sort((a,b)=>new Date(a.x)-new Date(b.x));
 const todayStr = () => new Date().toISOString().split("T")[0];
-// Attachments used to live on individual goals (chart.attachments). They're now shared across
-// every goal for a student (student.attachments) so a file uploaded once is visible everywhere.
-// This normalizer folds any legacy per-chart attachments up onto the student the first time old
-// data (from localStorage or an imported file) is loaded, so nothing gets lost in the move.
+// Attachments are scoped per-goal (chart.attachments) and the Accommodations tab has its own
+// separate pool (student.accommodationAttachments) — a file uploaded to one goal, or to
+// Accommodations, doesn't show up anywhere else.
+// A prior version of this app pooled every goal's attachments into one shared, student-level
+// list (student.attachments). This normalizer runs once per load: it makes sure every chart has
+// its own `attachments` array, and — since a merged pool has no way to tell which goal a given
+// file used to belong to — moves any leftover shared pool onto the Accommodations tab rather
+// than silently dropping it, so nothing already-uploaded disappears.
 const normalizeStudentAttachments = student => {
   const charts = Array.isArray(student.charts) ? student.charts : [];
-  const legacyChartAttachments = charts.flatMap(c => Array.isArray(c.attachments) ? c.attachments : []);
+  const { attachments: legacySharedPool, ...rest } = student;
   return {
-    ...student,
-    attachments: [
-      ...(Array.isArray(student.attachments) ? student.attachments : []),
-      ...legacyChartAttachments,
+    ...rest,
+    accommodationAttachments: [
+      ...(Array.isArray(student.accommodationAttachments) ? student.accommodationAttachments : []),
+      ...(Array.isArray(legacySharedPool) ? legacySharedPool : []),
     ],
-    charts: charts.map(c => {
-      if (!("attachments" in c)) return c;
-      const { attachments, ...rest } = c;
-      return rest;
-    }),
+    charts: charts.map(c => ({ ...c, attachments: Array.isArray(c.attachments) ? c.attachments : [] })),
   };
 };
 const currentYear = () => new Date().getFullYear();
@@ -1707,8 +1707,8 @@ export default function App(){
   const [sets,setSets]=useState(()=>{
     try{
       const s=localStorage.getItem("pm_v2");
-      const parsed = s ? JSON.parse(s) : [{name:"Alex Johnson",collapsed:false,accommodations:[],accDays:{},minutes:[],attachments:[],
-        charts:[{name:"Reading Fluency",startValue:40,startDate:"",goalValue:90,goalDate:"",data:[],notes:""}]}];
+      const parsed = s ? JSON.parse(s) : [{name:"Alex Johnson",collapsed:false,accommodations:[],accDays:{},minutes:[],accommodationAttachments:[],
+        charts:[{name:"Reading Fluency",startValue:40,startDate:"",goalValue:90,goalDate:"",data:[],notes:"",attachments:[]}]}];
       return Array.isArray(parsed) ? parsed.map(student => normalizeStudentAttachments({
         ...student,
         accommodations: Array.isArray(student.accommodations) ? student.accommodations : [],
@@ -1830,6 +1830,44 @@ export default function App(){
   const pal=getPal(selSet);
   const allStudentIds = sets.map((_, idx) => idx);
 
+  // Attachments are scoped per-goal (chart.attachments), except on the Accommodations tab,
+  // which has its own separate pool (student.accommodationAttachments). Whichever tab is active
+  // decides which pool the Files button/modal reads from and writes to.
+  const attachmentsScope = activeTab === "accommodations" ? "accommodations" : "goal";
+  const activeAttachments = attachmentsScope === "accommodations"
+    ? (student?.accommodationAttachments ?? [])
+    : (chart?.attachments ?? []);
+  const addActiveAttachment = file => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const entry = { name: file.name, type: file.type, size: file.size, content: ev.target.result.split(",")[1] };
+      upd(d => {
+        if (attachmentsScope === "accommodations") {
+          if (!Array.isArray(d[selSet].accommodationAttachments)) d[selSet].accommodationAttachments = [];
+          d[selSet].accommodationAttachments.push(entry);
+        } else {
+          const c = d[selSet].charts[selChart];
+          if (!c) return;
+          if (!Array.isArray(c.attachments)) c.attachments = [];
+          c.attachments.push(entry);
+        }
+      });
+    };
+    reader.readAsDataURL(file);
+  };
+  const removeActiveAttachment = index => {
+    upd(d => {
+      if (attachmentsScope === "accommodations") {
+        d[selSet].accommodationAttachments = (d[selSet].accommodationAttachments ?? []).filter((_, j) => j !== index);
+      } else {
+        const c = d[selSet].charts[selChart];
+        if (!c) return;
+        c.attachments = (c.attachments ?? []).filter((_, j) => j !== index);
+      }
+    });
+  };
+
   const openBulkReport = () => {
     setBulkSelectedStudentIds(allStudentIds);
     setBulkReportOpen(true);
@@ -1882,12 +1920,12 @@ export default function App(){
     if(!newSName.trim()) return;
     const name = newSName.trim();
     const emoji = (newSEmoji.trim() || getStudentEmoji({ name })).slice(0, 2);
-    upd(d => d.push({ name, emoji, groupId: "", collapsed: false, accommodations: [], accDays: {}, minutes: [], attachments: [], charts: [] }));
+    upd(d => d.push({ name, emoji, groupId: "", collapsed: false, accommodations: [], accDays: {}, minutes: [], accommodationAttachments: [], charts: [] }));
     setSelSet(sets.length);setSelChart(0);setActiveTab("goals");setView("student");setNewSName("");setNewSEmoji("");setShowAS(false);
   };
   const addGoal=()=>{
     if(!newGName.trim()) return;
-    upd(d=>d[selSet].charts.push({name:newGName.trim(),startValue:0,startDate:"",goalValue:100,goalDate:"",data:[],notes:"",quarters:[]}));
+    upd(d=>d[selSet].charts.push({name:newGName.trim(),startValue:0,startDate:"",goalValue:100,goalDate:"",data:[],notes:"",quarters:[],attachments:[]}));
     setSelChart(student.charts.length);setNewGName("");setShowAG(false);
   };
   const addGroup=()=>{
@@ -2061,10 +2099,10 @@ export default function App(){
     printHtmlDocument(html, `Parent Report - ${student?.name ?? ""} - ${chart.name ?? "Goal"}`);
   };
 
-  // Attachments are shared across a whole student (see normalizeStudentAttachments above), so
-  // these two act on every file that student has, regardless of which goal or tab is open.
+  // Act on whichever attachment pool is currently active — the selected goal's own files, or
+  // the Accommodations tab's separate pool — not every file the student has everywhere.
   const downloadAllAttachments = () => {
-    const atts = student?.attachments ?? [];
+    const atts = activeAttachments;
     if (!atts.length) return;
     // Stagger the downloads slightly — firing many `a.click()` calls in the same tick gets
     // several of them silently dropped by the browser's popup/download-blocking heuristics.
@@ -2083,7 +2121,7 @@ export default function App(){
     });
   };
   const printAllAttachments = () => {
-    const atts = student?.attachments ?? [];
+    const atts = activeAttachments;
     if (!atts.length) return;
     const pages = atts.map(f => {
       const type = f.type || "";
@@ -2781,28 +2819,31 @@ export default function App(){
       <Modal show={showAtt} onClose={()=>setShowAtt(false)} title="Attachments" emoji="📎">
         {student&&(
           <div style={{display:"flex",flexDirection:"column",gap:12}}>
-            <div style={{fontSize:12,color:"var(--ink-soft)"}}>Shared across all of {student.name}'s goals.</div>
+            <div style={{fontSize:12,color:"var(--ink-soft)"}}>
+              {attachmentsScope==="accommodations"
+                ? `Shared across the Accommodations tab for ${student.name} — separate from any goal's files.`
+                : `Only attached to "${chart?.name ?? "this goal"}" — other goals have their own files.`}
+            </div>
             <div><SectionLabel>Upload a File</SectionLabel>
               <input type="file" style={{marginTop:6}} onChange={e=>{
                 const f=e.target.files[0];if(!f) return;
-                const r=new FileReader();
-                r.onload=ev=>{upd(d=>{if(!Array.isArray(d[selSet].attachments))d[selSet].attachments=[];d[selSet].attachments.push({name:f.name,type:f.type,size:f.size,content:ev.target.result.split(",")[1]});});};
-                r.readAsDataURL(f);e.target.value="";
+                addActiveAttachment(f);
+                e.target.value="";
               }}/></div>
-            {(student.attachments??[]).length===0?(<div style={{textAlign:"center",padding:"14px 0",color:"var(--ink-soft)",fontSize:13}}>No files yet</div>
+            {activeAttachments.length===0?(<div style={{textAlign:"center",padding:"14px 0",color:"var(--ink-soft)",fontSize:13}}>No files yet</div>
             ):(
               <>
                 <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                  <button className="ghost-btn" onClick={downloadAllAttachments} style={{padding:"5px 12px",fontSize:12}}>⬇ Download All ({(student.attachments??[]).length})</button>
+                  <button className="ghost-btn" onClick={downloadAllAttachments} style={{padding:"5px 12px",fontSize:12}}>⬇ Download All ({activeAttachments.length})</button>
                   <button className="ghost-btn" onClick={printAllAttachments} style={{padding:"5px 12px",fontSize:12}}>🖨 Print All</button>
                 </div>
-                {(student.attachments??[]).map((f,i)=>(
+                {activeAttachments.map((f,i)=>(
                   <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",background:"var(--cream)",borderRadius:8,border:"1.5px solid var(--border)"}}>
                     <span style={{fontSize:20}}>📄</span>
                     <span style={{flex:1,fontSize:13,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.name}</span>
                     <span style={{fontSize:11,color:"var(--ink-soft)"}}>{Math.round(f.size/1024)}KB</span>
                     <button className="ghost-btn" onClick={()=>{const bytes=Uint8Array.from(atob(f.content),c=>c.charCodeAt(0));const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([bytes],{type:f.type}));a.download=f.name;a.click();}} style={{padding:"3px 10px"}}>↓</button>
-                    <button className="ghost-btn" onClick={()=>upd(d=>{d[selSet].attachments=(d[selSet].attachments??[]).filter((_,j)=>j!==i);})} style={{padding:"3px 10px",color:"var(--red)"}}>🗑️</button>
+                    <button className="ghost-btn" onClick={()=>removeActiveAttachment(i)} style={{padding:"3px 10px",color:"var(--red)"}}>🗑️</button>
                   </div>
                 ))}
               </>
