@@ -1561,7 +1561,7 @@ function MinutesTab({student, selSet, upd, minuteOptions, requestConfirm, theme,
 }
 
 // ─── Report Modal ─────────────────────────────────────────────────────────────
-function ReportModal({show,onClose,sets,selSet,onPrint}){
+function ReportModal({show,onClose,sets,selSet,onPrint,chart,onParentPrint}){
   const student=sets[selSet];
   if(!show||!student) return null;
   const today=new Date().toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"});
@@ -1573,8 +1573,11 @@ function ReportModal({show,onClose,sets,selSet,onPrint}){
       <div onClick={e=>e.stopPropagation()} className="card-appear print-report" style={{background:"var(--paper)",borderRadius:"var(--r-lg)",boxShadow:"var(--shadow-lg)",padding:36,width:"92%",maxWidth:680,maxHeight:"90vh",overflowY:"auto",border:"2px solid var(--border)"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:24}} className="no-print">
           <div style={{fontFamily:"var(--font-head)",fontWeight:800,fontSize:17}}>📄 Progress Report</div>
-          <div style={{display:"flex",gap:8}}>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
             <button className="action-btn" onClick={onPrint} style={{background:"var(--teal)",color:"#fff"}}>🖨 Print</button>
+            {chart&&(
+              <button className="action-btn" onClick={onParentPrint} title={`Print just "${chart.name ?? "this goal"}" — chart + quarterly averages`} style={{background:"#4e9af1",color:"#fff"}}>👪 Parent Print</button>
+            )}
             <button className="ghost-btn" onClick={onClose}>✕</button>
           </div>
         </div>
@@ -1997,6 +2000,45 @@ export default function App(){
       }
       setTimeout(() => iframe.remove(), 1000);
     };
+  };
+  // "Parent Print" — a short, single-goal handout for the currently selected goal: just the
+  // goal's headline numbers, a snapshot image of its chart (pulled straight off the live
+  // Chart.js canvas so it matches exactly what's on screen, quarter lines and all), and the
+  // quarterly averages log. No minutes, accommodations, or other goals included.
+  const printGoalReport = () => {
+    if (!chart) return;
+    const today = new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+    const pts = chart.data ?? [];
+    const latest = pts[pts.length - 1];
+    const chartImg = (activeTab === "goals" && typeof chartRef.current?.toBase64Image === "function")
+      ? chartRef.current.toBase64Image("image/png", 1)
+      : null;
+
+    const html = `
+      <div class="report-page">
+        <div class="report">
+          <div class="report-header">
+            <div>
+              <div class="report-name">${escapeHtml(student?.name ?? "")} — ${escapeHtml(chart.name ?? "Goal")}</div>
+              <div class="report-meta">Parent Copy · Generated ${today}</div>
+            </div>
+            <span class="badge"></span>
+          </div>
+          <div class="mini-grid">
+            <div class="mini-box"><div class="mini-label">Baseline</div><div class="mini-number">${chart.startValue ?? 0}%</div></div>
+            <div class="mini-box"><div class="mini-label">Current</div><div class="mini-number">${latest ? `${latest.y}%` : "—"}</div></div>
+            <div class="mini-box"><div class="mini-label">Goal</div><div class="mini-number">${chart.goalValue ?? 0}%</div></div>
+          </div>
+          ${chartImg
+            ? `<div style="margin-top:16px;border:1px solid #e7e1d8;border-radius:12px;padding:10px;background:#fff;page-break-inside:avoid;break-inside:avoid"><img src="${chartImg}" style="width:100%;display:block" /></div>`
+            : `<div class="empty" style="margin-top:12px">Open the Goals tab to include a copy of the chart next time.</div>`}
+          ${buildQuartersMarkup(chart)}
+          <div class="footer"><span>Progress Monitor · Parent Copy</span><span>${today}</span></div>
+        </div>
+      </div>
+    `;
+
+    printHtmlDocument(html, `Parent Report - ${student?.name ?? ""} - ${chart.name ?? "Goal"}`);
   };
   const printStudentReport = () => {
     const student = sets[selSet];
@@ -2715,7 +2757,7 @@ export default function App(){
         </div>
       </Modal>
 
-      <ReportModal show={showReport} onClose={()=>setShowReport(false)} sets={sets} selSet={selSet} onPrint={printStudentReport} />
+      <ReportModal show={showReport} onClose={()=>setShowReport(false)} sets={sets} selSet={selSet} onPrint={printStudentReport} chart={chart} onParentPrint={printGoalReport} />
 
       <Modal show={bulkReportOpen} onClose={()=>setBulkReportOpen(false)} title="Print Class Reports" emoji="🖨" wide>
         <div style={{display:"flex",flexDirection:"column",gap:18}}>
