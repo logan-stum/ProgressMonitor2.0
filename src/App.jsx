@@ -5,8 +5,9 @@ import {
   Chart as ChartJS, CategoryScale, LinearScale, PointElement,
   LineElement, Title, Tooltip, Legend, TimeScale, Filler,
 } from "chart.js";
+import zoomPlugin from "chartjs-plugin-zoom";
 
-ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, TimeScale, Filler);
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, TimeScale, Filler, zoomPlugin);
 
 // ─── Global styles ────────────────────────────────────────────────────────────
 const css = document.createElement("style");
@@ -294,7 +295,7 @@ function Calendar({year,month,onSelectDay,accDays,accList,selectedDay}){
 }
 
 // ─── Accommodations Tab ───────────────────────────────────────────────────────
-function AccommodationsTab({student,selSet,upd}){
+function AccommodationsTab({student,selSet,upd,theme,pal}){
   const accList=student?.accommodations??[];
   const accDays=student?.accDays??{};
   const [calYear,setCalYear]=useState(currentYear);
@@ -351,10 +352,10 @@ function AccommodationsTab({student,selSet,upd}){
     <div style={{flex:1,overflow:"auto",padding:"20px 24px",display:"flex",flexDirection:"column",gap:18}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
         <div>
-          <div style={{fontFamily:"var(--font-head)",fontWeight:900,fontSize:18}}>🛠 Accommodations</div>
-          <div style={{fontSize:12,color:"var(--ink-soft)",marginTop:2}}>
+          <div style={{fontFamily:"var(--font-head)",fontWeight:900,fontSize:18,color:theme.text}}>🛠 Accommodations</div>
+          <div style={{fontSize:12,color:theme.subtle,marginTop:2}}>
             {accList.length===0?"No accommodations set up yet":`${accList.length} accommodation${accList.length!==1?"s":""} · ${student?.name}`}
-            {complianceRate!==null&&<span style={{marginLeft:10,fontWeight:700,color:"#52c97a"}}>{complianceRate}% compliance this month</span>}
+            {complianceRate!==null&&<span style={{marginLeft:10,fontWeight:700,color:theme.primary}}>{complianceRate}% compliance this month</span>}
           </div>
         </div>
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
@@ -362,7 +363,7 @@ function AccommodationsTab({student,selSet,upd}){
             {yearList.map(y=><option key={y} value={y}>{y}</option>)}
           </select>
           <button className="ghost-btn" onClick={openEdit}>✏️ Edit</button>
-          {accList.length===0&&<button className="action-btn" onClick={()=>setShowSetup(true)} style={{background:"var(--teal)",color:"#fff"}}>+ Set Up</button>}
+          {accList.length===0&&<button className="action-btn" onClick={()=>setShowSetup(true)} style={{background:theme.primary,color:"#fff"}}>+ Set Up</button>}
         </div>
       </div>
 
@@ -387,27 +388,27 @@ function AccommodationsTab({student,selSet,upd}){
             </div>
           )}
 
-          <div style={{background:"var(--paper)",borderRadius:"var(--r-lg)",border:"2px solid var(--border)",padding:"20px",boxShadow:"var(--shadow-sm)"}}>
+          <div style={{background:theme.card,borderRadius:"var(--r-lg)",border:`2px solid ${theme.border}`,padding:"20px",boxShadow:`0 8px 20px ${theme.shadow}`}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:18}}>
-              <button className="ghost-btn" onClick={prevMonth} style={{padding:"5px 12px"}}>‹</button>
-              <div style={{fontFamily:"var(--font-head)",fontWeight:900,fontSize:16}}>{MONTHS[calMonth]} {calYear}</div>
-              <button className="ghost-btn" onClick={nextMonth} style={{padding:"5px 12px"}}>›</button>
+              <button className="ghost-btn" onClick={prevMonth} style={{padding:"5px 12px",color:theme.text,borderColor:theme.border}}>‹</button>
+              <div style={{fontFamily:"var(--font-head)",fontWeight:900,fontSize:16,color:theme.text}}>{MONTHS[calMonth]} {calYear}</div>
+              <button className="ghost-btn" onClick={nextMonth} style={{padding:"5px 12px",color:theme.text,borderColor:theme.border}}>›</button>
             </div>
             <Calendar year={calYear} month={calMonth} onSelectDay={openDay} accDays={accDays} accList={accList} selectedDay={selDay}/>
             <div style={{marginTop:14,display:"flex",gap:14,flexWrap:"wrap"}}>
               {[{color:"#52c97a",label:"Given"},{color:"#ff6b6b",label:"Refused"},{color:"#c8c8d8",label:"Not Given"},{color:"#a78bfa",label:"Absent"}].map(({color,label})=>(
-                <div key={label} style={{display:"flex",alignItems:"center",gap:5,fontSize:11,color:"var(--ink-soft)"}}>
+                <div key={label} style={{display:"flex",alignItems:"center",gap:5,fontSize:11,color:theme.subtle}}>
                   <span style={{display:"inline-block",width:8,height:8,borderRadius:"50%",background:color}}/>{label}
                 </div>
               ))}
             </div>
           </div>
 
-          <div style={{background:"var(--paper)",borderRadius:"var(--r-lg)",border:"2px solid var(--border)",padding:"18px",boxShadow:"var(--shadow-sm)"}}>
-            <div style={{fontFamily:"var(--font-head)",fontWeight:800,fontSize:14,marginBottom:12}}>📋 Accommodation List</div>
+          <div style={{background:theme.card,borderRadius:"var(--r-lg)",border:`2px solid ${theme.border}`,padding:"18px",boxShadow:`0 8px 20px ${theme.shadow}`}}>
+            <div style={{fontFamily:"var(--font-head)",fontWeight:800,fontSize:14,marginBottom:12,color:theme.text}}>📋 Accommodation List</div>
             <div style={{display:"flex",flexDirection:"column",gap:6}}>
               {accList.map((a,i)=>(
-                <div key={a.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",background:"var(--cream)",borderRadius:8,border:"1.5px solid var(--border)"}}>
+                <div key={a.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",background:theme.softPanel,borderRadius:8,border:`1.5px solid ${theme.border}`}}>
                   <div style={{width:24,height:24,borderRadius:"50%",background:"var(--teal)",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"var(--font-head)",fontWeight:800,fontSize:11,flexShrink:0}}>{i+1}</div>
                   <span style={{fontSize:13,fontWeight:600}}>{a.name}</span>
                 </div>
@@ -416,20 +417,20 @@ function AccommodationsTab({student,selSet,upd}){
           </div>
         </>
       ):(
-        <div style={{background:"var(--paper)",borderRadius:"var(--r-lg)",border:"2px dashed var(--border)",padding:"48px 24px",textAlign:"center"}}>
+        <div style={{background:theme.card,borderRadius:"var(--r-lg)",border:`2px dashed ${theme.border}`,padding:"48px 24px",textAlign:"center"}}>
           <div style={{fontSize:48,marginBottom:12}}>🛠</div>
-          <div style={{fontFamily:"var(--font-head)",fontWeight:800,fontSize:16,marginBottom:6}}>No accommodations yet</div>
-          <div style={{fontSize:13,color:"var(--ink-soft)",marginBottom:20}}>Set up once, log every day.</div>
-          <button className="action-btn" onClick={()=>setShowSetup(true)} style={{background:"var(--teal)",color:"#fff"}}>+ Set Up Accommodations</button>
+          <div style={{fontFamily:"var(--font-head)",fontWeight:800,fontSize:16,marginBottom:6,color:theme.text}}>No accommodations yet</div>
+          <div style={{fontSize:13,color:theme.subtle,marginBottom:20}}>Set up once, log every day.</div>
+          <button className="action-btn" onClick={()=>setShowSetup(true)} style={{background:theme.primary,color:"#fff"}}>+ Set Up Accommodations</button>
         </div>
       )}
 
       <Modal show={showSetup} onClose={()=>setShowSetup(false)} title="Set Up Accommodations" emoji="🛠" wide>
-        <div style={{fontSize:13,color:"var(--ink-mid)",marginBottom:16}}>Enter each accommodation for <strong>{student?.name}</strong>. Press Enter to add.</div>
+        <div style={{fontSize:13,color:theme.subtle,marginBottom:16}}>Enter each accommodation for <strong>{student?.name}</strong>. Press Enter to add.</div>
         <div style={{display:"flex",gap:8,marginBottom:12}}>
           <input type="text" placeholder="Type an accommodation and press Enter…" value={setupInput} onChange={e=>setSetupInput(e.target.value)}
-            onKeyDown={e=>{if(e.key==="Enter"&&setupInput.trim()){setSetupList(l=>[...l,setupInput.trim()]);setSetupInput("");}}} autoFocus/>
-          <button className="action-btn" onClick={()=>{if(setupInput.trim()){setSetupList(l=>[...l,setupInput.trim()]);setSetupInput("");}}} style={{background:"var(--teal)",color:"#fff",flexShrink:0}}>Add</button>
+            onKeyDown={e=>{if(e.key==="Enter"&&setupInput.trim()){setSetupList(l=>[...l,setupInput.trim()]);setSetupInput("");}}} autoFocus style={{background:theme.panel,borderColor:theme.border,color:theme.text}}/>
+          <button className="action-btn" onClick={()=>{if(setupInput.trim()){setSetupList(l=>[...l,setupInput.trim()]);setSetupInput("");}}} style={{background:theme.primary,color:"#fff",flexShrink:0}}>Add</button>
         </div>
         {setupList.length>0&&(
           <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:16}}>
@@ -499,6 +500,31 @@ function AccommodationsTab({student,selSet,upd}){
   );
 }
 
+// Parses a "YYYY-MM-DD" string into a Date at noon (avoids timezone edge cases), or null if invalid.
+function parseISODate(value) {
+  if (!value || typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const parsed = new Date(`${value}T12:00:00`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+// The goal is a trend line from (startDate, startValue) to (goalDate, goalValue) — not a flat
+// threshold. This returns what the student *should* be at on a given date if they're on pace.
+// Before the baseline date it's clamped to startValue; after the goal date it's clamped to goalValue.
+// Returns null when there isn't a full, valid baseline→goal trend line configured — in that case
+// there's nothing to compare against, so callers should skip flagging rather than fall back to a
+// flat number.
+function getOnTrackValue(chart, atDateStr) {
+  const atDate = parseISODate(atDateStr);
+  const startDate = parseISODate(chart?.startDate);
+  const goalDate = parseISODate(chart?.goalDate);
+  const hasTrendLine = atDate && startDate && goalDate && chart?.startValue != null && chart?.goalValue != null && startDate.getTime() <= goalDate.getTime();
+  if (!hasTrendLine) return null;
+  const span = goalDate.getTime() - startDate.getTime();
+  const t = span === 0 ? 1 : (atDate.getTime() - startDate.getTime()) / span;
+  const clampedT = Math.max(0, Math.min(1, t));
+  return chart.startValue + clampedT * (chart.goalValue - chart.startValue);
+}
+
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 function Dashboard({
   sets,
@@ -516,6 +542,8 @@ function Dashboard({
   setHomeAccommodation,
   homeGroupFilter,
   setHomeGroupFilter,
+  theme,
+  setTheme,
 }){
   const thisYear = currentYear();
   const [dashboardGroupCollapsed, setDashboardGroupCollapsed] = useState({});
@@ -530,81 +558,152 @@ function Dashboard({
     return matchesSearch && matchesAccommodation && matchesGroup;
   });
 
+  const orderedStudents = [...filteredStudents].sort((a, b) => a.name.localeCompare(b.name));
+
   const groupSections = [
     ...groups.map(group => ({
       ...group,
-      students: filteredStudents.filter(student => student.groupId === group.id),
+      students: orderedStudents.filter(student => student.groupId === group.id),
     })),
-    { id: "ungrouped", name: "Ungrouped", students: filteredStudents.filter(student => !student.groupId || !groups.some(group => group.id === student.groupId)) },
+    { id: "ungrouped", name: "Ungrouped", students: orderedStudents.filter(student => !student.groupId || !groups.some(group => group.id === student.groupId)) },
   ];
 
-  const ungroupedStudents = filteredStudents.filter(student => !student.groupId || !groups.some(group => group.id === student.groupId));
+  const ungroupedStudents = orderedStudents.filter(student => !student.groupId || !groups.some(group => group.id === student.groupId));
 
   const renderStudentCard = (student, index) => {
     const p = getPal(index);
-    const yearPts = student.charts.flatMap(c => (c.data ?? []).filter(pt => pt.x?.startsWith(String(thisYear))));
-    const allPts = student.charts.flatMap(c => c.data ?? []);
-    const latest = allPts[allPts.length - 1];
-    const thisMonthStr = `${thisYear}-${String(new Date().getMonth() + 1).padStart(2, "0")}`;
-    const monthPts = allPts.filter(pt => pt.x?.startsWith(thisMonthStr));
-    const streak = monthPts.length;
+    const accList = student.accommodations ?? [];
+    const hasAccommodations = accList.length > 0;
     const accDays = student.accDays ?? {};
     const todayAcc = accDays[todayStr()];
     const accDone = !!(todayAcc && Object.keys(todayAcc).length > 0);
+    const accMissing = hasAccommodations && !accDone;
+
+    // Work out, per goal, whether the latest entry has fallen below the trend line connecting
+    // baseline (date+value) to goal (date+value) — i.e. below where the student should be *today*
+    // if on pace, not just below the final goal number.
+    // Severity is based on the two most recent points, not just magnitude:
+    //  - latest point below the line, but the point before it was on/above the line => yellow (new dip)
+    //  - latest point below the line, AND the point before it was also below the line => red (a trend)
+    let redGoalCount = 0, yellowGoalCount = 0;
+    const goalStatuses = student.charts.map(c => {
+      const cPts = c.data ?? [];
+      const cLatest = cPts[cPts.length - 1];
+      if (!cLatest) return { cPts, cLatest, level: null, diff: null, onTrackValue: null, streakCount: 0 };
+      const onTrackValue = getOnTrackValue(c, cLatest.x);
+      if (onTrackValue == null) return { cPts, cLatest, level: null, diff: null, onTrackValue: null, streakCount: 0 };
+      const diff = onTrackValue - cLatest.y;
+      // Small epsilon so floating-point rounding on a point that's essentially right on the
+      // trend line doesn't get flagged as "behind" by a fraction of a point.
+      const EPS = 0.05;
+
+      // Count how many consecutive entries, ending at the latest one, fall below the trend
+      // line's target for their own date. This drives the red/yellow severity below.
+      let streakCount = 0;
+      for (let i = cPts.length - 1; i >= 0; i--) {
+        const pt = cPts[i];
+        const ptTarget = getOnTrackValue(c, pt.x);
+        if (ptTarget == null || ptTarget - pt.y <= EPS) break;
+        streakCount++;
+      }
+
+      const level = streakCount >= 2 ? "red" : streakCount === 1 ? "yellow" : null;
+      if (level === "red") redGoalCount++;
+      else if (level === "yellow") yellowGoalCount++;
+      return { cPts, cLatest, level, diff, onTrackValue, streakCount };
+    });
 
     return (
       <div key={index} className="stu-card" draggable onDragStart={event => {
           event.dataTransfer.setData("text/plain", String(index));
           event.dataTransfer.effectAllowed = "move";
-        }} onClick={() => onSelectStudent(index)} style={{ borderColor: p.border }}>
+        }} onClick={() => onSelectStudent(index)} style={{
+          borderColor: accMissing || redGoalCount > 0 ? "var(--red)" : yellowGoalCount > 0 ? "var(--yellow)" : p.border,
+          background: theme.card,
+          boxShadow: `0 10px 25px ${theme.shadow}`,
+          borderWidth: 2,
+        }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{ width: 40, height: 40, borderRadius: "50%", background: `linear-gradient(135deg,${p.chip},${p.chip}99)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>{getStudentEmoji(student)}</div>
           <div style={{ flex: 1, overflow: "hidden" }}>
-            <div style={{ fontFamily: "var(--font-head)", fontWeight: 800, fontSize: 15, color: p.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{student.name}</div>
-            <div style={{ fontSize: 11, color: "var(--ink-soft)" }}>{student.charts.length} goal{student.charts.length !== 1 ? "s" : ""}</div>
+            <div style={{ fontFamily: "var(--font-head)", fontWeight: 800, fontSize: 15, color: theme.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{student.name}</div>
+            <div style={{ fontSize: 11, color: theme.subtle, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+              <span>{student.charts.length} goal{student.charts.length !== 1 ? "s" : ""}</span>
+              {redGoalCount > 0 && <span style={{ color: "var(--red)", fontWeight: 800 }}>🔴 {redGoalCount} behind pace</span>}
+              {redGoalCount === 0 && yellowGoalCount > 0 && <span style={{ color: "#9a6a00", fontWeight: 800 }}>🟡 {yellowGoalCount} behind pace</span>}
+            </div>
           </div>
-          {accDone && <span title="Accommodations logged today" style={{ fontSize: 16 }}>✅</span>}
+          {accDone ? (
+            <span title="Accommodations logged today" style={{ fontSize: 16 }}>✅</span>
+          ) : accMissing ? (
+            <span title="Accommodations not logged today" style={{ fontSize: 16 }}>⚠️</span>
+          ) : null}
         </div>
 
+        {accMissing && (
+          <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 10px", borderRadius: 8, background: "rgba(255,107,107,0.12)", border: "1.5px solid rgba(255,107,107,0.4)", fontSize: 11, fontWeight: 700, color: "#c0392b" }}>
+            <span>⚠️</span><span>Accommodations not logged today</span>
+          </div>
+        )}
+
         {student.charts.map((c, ci) => {
-          const cPts = c.data ?? [];
-          const cLatest = cPts[cPts.length - 1];
+          const { cPts, cLatest, level, diff, onTrackValue, streakCount } = goalStatuses[ci];
           if (!cLatest) return null;
           const goalPct = c.goalValue ? Math.round((cLatest.y / c.goalValue) * 100) : null;
+          const levelColor = level === "red" ? "var(--red)" : level === "yellow" ? "var(--yellow)" : null;
+          const levelBg = level === "red" ? "rgba(255,107,107,0.10)" : level === "yellow" ? "rgba(255,209,102,0.16)" : theme.softPanel;
           return (
-            <div key={ci} style={{ background: p.bg, borderRadius: 8, padding: "8px 10px", border: `1.5px solid ${p.border}44` }}>
+            <div key={ci} style={{ background: levelBg, borderRadius: 8, padding: "8px 10px", border: `1.5px solid ${levelColor ? levelColor : p.border + "44"}` }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-                <span style={{ fontSize: 12, fontWeight: 700, color: p.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{c.name}</span>
-                <span style={{ fontFamily: "var(--font-head)", fontWeight: 900, fontSize: 14, color: p.chip, flexShrink: 0, marginLeft: 6 }}>{cLatest.y}%</span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: theme.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, display: "flex", alignItems: "center", gap: 4 }}>
+                  {level && <span title={level === "red" ? `Below target for ${streakCount} entries in a row` : "Newly below target"}>{level === "red" ? "🔴" : "🟡"}</span>}
+                  {c.name}
+                </span>
+                <span style={{ fontFamily: "var(--font-head)", fontWeight: 900, fontSize: 14, color: levelColor || p.chip, flexShrink: 0, marginLeft: 6 }}>{cLatest.y}%</span>
               </div>
+              {onTrackValue != null && (
+                <div style={{ fontSize: 10, color: levelColor || theme.subtle, marginBottom: 4 }}>
+                  {level === "red" && `Target ${Math.round(onTrackValue * 10) / 10}% by ${cLatest.x} — below target ${streakCount} entries in a row`}
+                  {level === "yellow" && `Target ${Math.round(onTrackValue * 10) / 10}% by ${cLatest.x} — newly below target`}
+                  {!level && `On pace · target was ${Math.round(onTrackValue * 10) / 10}% as of ${cLatest.x}`}
+                </div>
+              )}
               <Sparkline data={cPts} color={p.chip} />
               {goalPct !== null && (
                 <div style={{ marginTop: 5, height: 4, background: "var(--border)", borderRadius: 99, overflow: "hidden" }}>
-                  <div style={{ width: `${Math.min(goalPct, 100)}%`, height: "100%", background: p.chip, borderRadius: 99, transition: "width .4s ease" }} />
+                  <div style={{ width: `${Math.min(goalPct, 100)}%`, height: "100%", background: levelColor || p.chip, borderRadius: 99, transition: "width .4s ease" }} />
                 </div>
               )}
             </div>
           );
         })}
-
-        <div style={{ display: "flex", gap: 8, marginTop: 2 }} />
       </div>
     );
   };
 
   return (
-    <div style={{ flex: 1, overflow: "auto", padding: "24px 28px" }}>
+    <div style={{ flex: 1, overflow: "auto", padding: "24px 28px", background: theme.page, color: theme.text, transition: "all .2s ease" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18, flexWrap: "wrap", gap: 12 }}>
         <div>
-          <div style={{ fontFamily: "var(--font-head)", fontWeight: 900, fontSize: 22 }}>👋 {greeting}!</div>
-          <div style={{ fontSize: 13, color: "var(--ink-soft)", marginTop: 2 }}>Here’s your class at a glance.</div>
+          <div style={{ fontFamily: "var(--font-head)", fontWeight: 900, fontSize: 22, color: theme.text }}>👋 {greeting}!</div>
+          <div style={{ fontSize: 13, color: theme.subtle, marginTop: 2 }}>Here’s your class at a glance.</div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          <button className="ghost-btn" onClick={onOpenBulkReport} style={{ background: "#eafaf6", color: "var(--teal)", borderColor: "#bce7dd" }}>🖨 Print All Reports</button>
-          <button className="action-btn" onClick={onOpenGroupModal} style={{ background: "var(--yellow)", color: "#2d2d3a" }}>+ Add Group</button>
-          <button className="action-btn" onClick={onAddStudent} style={{ background: "var(--teal)", color: "#fff" }}>+ Add Student</button>
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 10px", borderRadius: 999, background: theme.panel, border: `1.5px solid ${theme.border}`, boxShadow: `0 6px 18px ${theme.shadow}` }}>
+            <span style={{ fontSize: 12 }}>🎨</span>
+            <select value={theme.key} onChange={event => setTheme(event.target.value)} style={{ background: "transparent", border: "none", color: theme.text, minWidth: 82, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+              <option value="sunrise">Sunrise</option>
+              <option value="studio">Studio</option>
+              <option value="night">Night</option>
+            </select>
+          </div>
+          <button className="ghost-btn" onClick={onOpenBulkReport} style={{ background: theme.panel, color: theme.text, borderColor: theme.border }}>🖨 Print All Reports</button>
+          <button className="action-btn" onClick={onOpenGroupModal} style={{ background: theme.accent, color: theme.accentText }}>+ Add Group</button>
+          <button className="action-btn" onClick={onAddStudent} style={{ background: theme.primary, color: "#fff" }}>+ Add Student</button>
         </div>
       </div>
+
+
 
       <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 16, flexWrap: "wrap" }}>
         <div style={{ position: "relative", minWidth: 220, flex: 1 }}>
@@ -614,18 +713,18 @@ function Dashboard({
             value={homeSearch}
             onChange={event => setHomeSearch(event.target.value)}
             placeholder="Search student or accommodation…"
-            style={{ paddingLeft: 36 }}
+            style={{ paddingLeft: 36, background: theme.panel, borderColor: theme.border, color: theme.text }}
           />
         </div>
 
-        <select value={homeAccommodation} onChange={event => setHomeAccommodation(event.target.value)} style={{ minWidth: 180 }}>
+        <select value={homeAccommodation} onChange={event => setHomeAccommodation(event.target.value)} style={{ minWidth: 180, background: theme.panel, borderColor: theme.border, color: theme.text }}>
           <option value="">All accommodations</option>
           {allAccommodations.map(acc => (
             <option key={acc} value={acc}>{acc}</option>
           ))}
         </select>
 
-        <select value={homeGroupFilter} onChange={event => setHomeGroupFilter(event.target.value)} style={{ minWidth: 160 }}>
+        <select value={homeGroupFilter} onChange={event => setHomeGroupFilter(event.target.value)} style={{ minWidth: 160, background: theme.panel, borderColor: theme.border, color: theme.text }}>
           <option value="all">All groups</option>
           <option value="ungrouped">Ungrouped</option>
           {groups.map(group => (
@@ -635,15 +734,15 @@ function Dashboard({
       </div>
 
       {sets.length === 0 ? (
-        <div style={{ textAlign: "center", padding: "60px 24px", color: "var(--ink-soft)" }}>
+        <div style={{ textAlign: "center", padding: "60px 24px", color: theme.subtle }}>
           <div style={{ fontSize: 56, marginBottom: 12 }}>🎒</div>
-          <div style={{ fontFamily: "var(--font-head)", fontWeight: 800, fontSize: 18, marginBottom: 8 }}>No students yet</div>
-          <button className="action-btn" onClick={onAddStudent} style={{ background: "var(--teal)", color: "#fff", marginTop: 8 }}>+ Add Your First Student</button>
+          <div style={{ fontFamily: "var(--font-head)", fontWeight: 800, fontSize: 18, marginBottom: 8, color: theme.text }}>No students yet</div>
+          <button className="action-btn" onClick={onAddStudent} style={{ background: theme.primary, color: "#fff", marginTop: 8 }}>+ Add Your First Student</button>
         </div>
-      ) : filteredStudents.length === 0 ? (
-        <div style={{ textAlign: "center", padding: "60px 24px", color: "var(--ink-soft)" }}>
+      ) : orderedStudents.length === 0 ? (
+        <div style={{ textAlign: "center", padding: "60px 24px", color: theme.subtle }}>
           <div style={{ fontSize: 48, marginBottom: 12 }}>🔎</div>
-          <div style={{ fontFamily: "var(--font-head)", fontWeight: 800, fontSize: 18 }}>No students match that filter</div>
+          <div style={{ fontFamily: "var(--font-head)", fontWeight: 800, fontSize: 18, color: theme.text }}>No students match that filter</div>
         </div>
       ) : (
         <>
@@ -658,22 +757,22 @@ function Dashboard({
                     const draggedIndex = Number(event.dataTransfer.getData("text/plain"));
                     if (!Number.isNaN(draggedIndex)) onUpdateStudentGroup(draggedIndex, section.id === "ungrouped" ? "" : section.id);
                   }}
-                  style={{ display: "flex", flexDirection: "column", gap: 12, background: "rgba(255,255,255,0.2)", borderRadius: 16, padding: 12, border: "1.5px dashed var(--border)" }}
+                  style={{ display: "flex", flexDirection: "column", gap: 12, background: theme.softPanel, borderRadius: 16, padding: 12, border: `1.5px dashed ${theme.border}` }}
                 >
                   <div
                     onClick={() => setDashboardGroupCollapsed(prev => ({ ...prev, [section.id]: !prev[section.id] }))}
-                    style={{ fontFamily: "var(--font-head)", fontWeight: 900, fontSize: 16, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, cursor: "pointer" }}
+                    style={{ fontFamily: "var(--font-head)", fontWeight: 900, fontSize: 16, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, cursor: "pointer", color: theme.text }}
                   >
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <span>{section.name}</span>
-                      <span style={{ fontSize: 12, color: "var(--ink-soft)", fontWeight: 700 }}>({section.students.length})</span>
+                      <span style={{ fontSize: 12, color: theme.subtle, fontWeight: 700 }}>({section.students.length})</span>
                     </div>
-                    <span style={{ fontSize: 13, color: "var(--ink-soft)" }}>{dashboardGroupCollapsed[section.id] ? "▸" : "▾"}</span>
+                    <span style={{ fontSize: 13, color: theme.subtle }}>{dashboardGroupCollapsed[section.id] ? "▸" : "▾"}</span>
                   </div>
                   {!dashboardGroupCollapsed[section.id] && (
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(260px,1fr))", gap: 16 }}>
-                      {section.students.length > 0 ? section.students.map((student) => renderStudentCard(student, sets.indexOf(student))) : (
-                        <div style={{ padding: "18px 12px", border: "2px dashed var(--border)", borderRadius: 12, color: "var(--ink-soft)", fontSize: 13, background: "var(--paper)" }}>
+                      {section.students.length > 0 ? section.students.map(student => renderStudentCard(student, sets.indexOf(student))) : (
+                        <div style={{ padding: "18px 12px", border: `2px dashed ${theme.border}`, borderRadius: 12, color: theme.subtle, fontSize: 13, background: theme.panel }}>
                           Drop a student here to place them in {section.name}.
                         </div>
                       )}
@@ -684,7 +783,7 @@ function Dashboard({
             </div>
           ) : (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(260px,1fr))", gap: 16 }}>
-              {filteredStudents.map((student, idx) => renderStudentCard(student, sets.indexOf(student)))}
+              {orderedStudents.map(student => renderStudentCard(student, sets.indexOf(student)))}
             </div>
           )}
         </>
@@ -694,7 +793,7 @@ function Dashboard({
 }
 
 // ─── Goals Tab ────────────────────────────────────────────────────────────────
-function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAtt,setShowAtt,setShowAG,chartRef,editPt,setEditPt}){
+function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAtt,setShowAtt,setShowAG,chartRef,editPt,setEditPt,theme}){
   const student=sets[selSet];
   const chart=student?.charts?.[selChart]??null;
   const pal=getPal(selSet);
@@ -847,6 +946,25 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
   const goalChartDate = parseChartDate(chart?.goalDate);
   const hasValidTargetDates = Boolean(startChartDate && goalChartDate && startChartDate.getTime() <= goalChartDate.getTime());
 
+  // Users can zoom/pan into a portion of the chart (see zoom plugin options below). The tick
+  // generator below recomputes its spacing against whatever date range is *currently visible* —
+  // daily for a short span, weekly for a several-month span, monthly for a multi-year span, etc.
+  // — so ticks stay readable at every zoom level instead of a fixed set built once for the full range.
+  const generateNiceTicks = (minTime, maxTime) => {
+    if (!Number.isFinite(minTime) || !Number.isFinite(maxTime) || maxTime <= minTime) return null;
+    const DAY = 24 * 60 * 60 * 1000;
+    const totalDays = Math.max(1, Math.round((maxTime - minTime) / DAY));
+    const niceStepsDays = [1, 2, 3, 5, 7, 14, 21, 30, 60, 90, 182, 365];
+    const maxTicks = 25;
+    let stepDays = niceStepsDays[niceStepsDays.length - 1];
+    for (const candidate of niceStepsDays) {
+      if (totalDays / candidate <= maxTicks) { stepDays = candidate; break; }
+    }
+    const tickTimes = new Set([minTime, maxTime]);
+    for (let t = minTime; t <= maxTime; t += stepDays * DAY) tickTimes.add(t);
+    return Array.from(tickTimes).sort((a, b) => a - b);
+  };
+
   const chartData={
     datasets:[
       {label:chart?.name??"Progress",data:pts,borderColor:pal.chip,backgroundColor:pal.chip+"22",tension:0.35,fill:true,
@@ -868,9 +986,21 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
         titleFont:{family:"'Nunito',sans-serif",weight:"800"},bodyFont:{family:"'Nunito Sans',sans-serif",size:12},
         callbacks:{label:ctx=>` ${ctx.parsed.y}%${ctx.raw?.notes?`  · ${ctx.raw.notes}`:""}`}},
       chartBg:chartBgPlugin,
+      zoom:{
+        pan:{enabled:true,mode:"x"},
+        zoom:{wheel:{enabled:true},pinch:{enabled:true},drag:{enabled:false},mode:"x"},
+        limits:{x:{min:"original",max:"original",minRange:2*24*60*60*1000}},
+      },
     },
     scales:{
-      x:{type:"time",time:{unit:"day",tooltipFormat:"MMM d, yyyy"},grid:{color:"rgba(0,0,0,0.04)"},ticks:{color:"#9898b0",font:{family:"'Nunito Sans'",size:11}}},
+      x:{type:"time",time:{unit:"day",tooltipFormat:"MMM d, yyyy"},grid:{color:"rgba(0,0,0,0.04)"},
+         ticks:{color:"#9898b0",font:{family:"'Nunito Sans'",size:11},autoSkip:false,maxRotation:60,minRotation:0},
+         afterBuildTicks: axis => {
+           // axis.min/axis.max already reflect any active zoom/pan, so this regenerates ticks
+           // for whatever window is currently visible instead of the original full range.
+           const niceTicks = generateNiceTicks(axis.min, axis.max);
+           if (niceTicks) axis.ticks = niceTicks.map(value => ({ value }));
+         }},
       y:{min:0,max:100,grid:{color:"rgba(0,0,0,0.04)"},ticks:{color:"#9898b0",font:{family:"'Nunito'",size:11},callback:v=>v+"%"}},
     },
     onClick:(evt,els)=>{
@@ -903,11 +1033,12 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
       {latest&&(
         <div className="fade-up" style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12}}>
           {[
-            {label:"Latest Score",   val:`${latest.y}%`,                  sub:latest.x,                                                   color:pal.chip, pct:latest.y},
+            {label:"Latest Score",   val:`${latest.y}%`,                  sub:latest.x,                                                   color:pal.chip, pct:latest.y}, 
             {label:"Goal Target",    val:`${chart.goalValue}%`,            sub:chart.goalDate||"No target date",                           color:"#52c97a",pct:chart.goalValue},
             {label:"Progress to Goal",val:goalPct!=null?`${goalPct}%`:"—",sub:trend!=null?(Number(trend)>=0?`▲ +${trend}% from last`:`▼ ${trend}% from last`):"Need more data",color:goalPct>=100?"#52c97a":"#ffd166",pct:goalPct??0},
           ].map(({label,val,sub,color,pct})=>(
-            <div key={label} className="stat-card">
+            <div key={label} className="stat-card" style={{ backgroundColor: theme.card }} 
+>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
                 <div style={{fontFamily:"var(--font-head)",fontWeight:900,fontSize:26}}>{val}</div>
                 <Ring pct={pct} color={color} size={52}/>
@@ -919,11 +1050,12 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
         </div>
       )}
 
-      <div style={{background:"var(--paper)",borderRadius:"var(--r-lg)",border:"2px solid var(--border)",padding:"16px",boxShadow:"var(--shadow-sm)"}}>
+      <div style={{background:theme.card,borderRadius:"var(--r-lg)",border:`2px solid ${theme.border}`,padding:"16px",boxShadow:`0 8px 20px ${theme.shadow}`}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,gap:10}}>
-          <div style={{fontFamily:"var(--font-head)",fontWeight:800,fontSize:14}}>Progress Chart — {viewYear}</div>
+          <div style={{fontFamily:"var(--font-head)",fontWeight:800,fontSize:14,color:theme.text}}>Progress Chart — {viewYear}</div>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-            <div style={{fontSize:11,color:"var(--ink-soft)"}}>Click a point to select it · filled dot = has note</div>
+            <div style={{fontSize:11,color:"var(--ink-soft)"}}>Click a point to select it · filled dot = has note · scroll/pinch to zoom · drag to pan</div>
+            <button className="ghost-btn" onClick={()=>chartRef.current?.resetZoom()} style={{padding:"4px 10px",fontSize:11}}>Reset zoom</button>
             {selectedPointIndex!==null&&(
               <button className="ghost-btn" onClick={()=>setPointToDelete(selectedPointIndex)} style={{padding:"4px 10px",fontSize:11,color:"var(--red)"}}>Delete selected</button>
             )}
@@ -941,14 +1073,14 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
         </div>
       </div>
 
-      <div style={{background:"var(--yellow-lt)",borderRadius:"var(--r-lg)",border:"2px solid #ffd166",padding:"16px",boxShadow:"var(--shadow-sm)"}}>
-        <div style={{fontFamily:"var(--font-head)",fontWeight:800,fontSize:13,marginBottom:8,color:"#9a6a00"}}>🗒 Goal Notes</div>
+      <div style={{background:theme.softPanel,borderRadius:"var(--r-lg)",border:`2px solid ${theme.border}`,padding:"16px",boxShadow:`0 8px 20px ${theme.shadow}`}}>
+        <div style={{fontFamily:"var(--font-head)",fontWeight:800,fontSize:13,marginBottom:8,color:theme.text}}>🗒 Goal Notes</div>
         <textarea value={chart.notes} onChange={e=>upd(d=>d[selSet].charts[selChart].notes=e.target.value)} placeholder="Strategies, parent notes, observations…" style={{display:"block",width:"100%",minHeight:140,resize:"vertical",fontSize:13,background:"rgba(255,255,255,.6)",border:"1.5px solid #ffd16699"}}/>
       </div>
 
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
-        <div style={{background:"var(--paper)",borderRadius:"var(--r-lg)",border:"2px solid var(--border)",padding:"18px",boxShadow:"var(--shadow-sm)"}}>
-          <div style={{fontFamily:"var(--font-head)",fontWeight:800,fontSize:14,marginBottom:14}}>📝 Log Session</div>
+        <div style={{background:theme.card,borderRadius:"var(--r-lg)",border:`2px solid ${theme.border}`,padding:"18px",boxShadow:`0 8px 20px ${theme.shadow}`}}>
+          <div style={{fontFamily:"var(--font-head)",fontWeight:800,fontSize:14,marginBottom:14,color:theme.text}}>📝 Log Session</div>
           <div style={{display:"flex",flexDirection:"column",gap:10}}>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
               <div><SectionLabel>Accuracy %</SectionLabel><input type="number" min={0} max={100} placeholder="0–100" value={newVal} onChange={e=>setNewVal(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addPoint(e)} style={{fontFamily:"var(--font-head)",fontWeight:700,fontSize:18,textAlign:"center"}}/></div>
@@ -957,8 +1089,8 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
             <div><SectionLabel>Session Note</SectionLabel><input type="text" placeholder="What went well? Any observations…" value={newNote} onChange={e=>setNewNote(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addPoint(e)}/></div>
             <button className="action-btn" onClick={addPoint} style={{background:pal.chip,color:"#fff",justifyContent:"center",width:"100%",fontSize:14,padding:"11px 18px"}}>✦ Add Data Point</button>
           </div>
-          <div style={{marginTop:16,paddingTop:14,borderTop:"1px dashed var(--border)"}}>
-            <div style={{fontFamily:"var(--font-head)",fontWeight:800,fontSize:11,color:"var(--ink-soft)",marginBottom:10,textTransform:"uppercase",letterSpacing:"0.07em"}}>🎯 Goal Setup</div>
+          <div style={{marginTop:16,paddingTop:14,borderTop:`1px dashed ${theme.border}`}}>
+            <div style={{fontFamily:"var(--font-head)",fontWeight:800,fontSize:11,color:theme.subtle,marginBottom:10,textTransform:"uppercase",letterSpacing:"0.07em"}}>🎯 Goal Setup</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
               {[{label:"Baseline %",val:chart.startValue,key:"startValue",type:"number"},{label:"Baseline Date",val:chart.startDate,key:"startDate",type:"date"},{label:"Goal %",val:chart.goalValue,key:"goalValue",type:"number"},{label:"Goal Date",val:chart.goalDate,key:"goalDate",type:"date"}].map(({label,val,key,type})=>(
                 <div key={key}><SectionLabel>{label}</SectionLabel><input
@@ -990,8 +1122,8 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
         </div>
 
         <div style={{display:"flex",flexDirection:"column",gap:14}}>
-          <div style={{background:"var(--paper)",borderRadius:"var(--r-lg)",border:"2px solid var(--border)",padding:"18px",boxShadow:"var(--shadow-sm)",flex:1,display:"flex",flexDirection:"column"}}>
-            <div style={{fontFamily:"var(--font-head)",fontWeight:800,fontSize:14,marginBottom:12}}>📋 Session Log</div>
+          <div style={{background:theme.card,borderRadius:"var(--r-lg)",border:`2px solid ${theme.border}`,padding:"18px",boxShadow:`0 8px 20px ${theme.shadow}`,flex:1,display:"flex",flexDirection:"column"}}>
+            <div style={{fontFamily:"var(--font-head)",fontWeight:800,fontSize:14,marginBottom:12,color:theme.text}}>📋 Session Log</div>
             <div style={{flex:1,minHeight:0,overflowY:"auto"}}>
               {pts.length===0?(
                 <div style={{textAlign:"center",padding:"24px 0",color:"var(--ink-soft)",fontSize:13}}>
@@ -1004,10 +1136,10 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
                     <div style={{width:44,textAlign:"right",fontFamily:"var(--font-head)",fontWeight:900,fontSize:14,color:pal.chip,flexShrink:0}}>{pt.y}%</div>
                     <div style={{flex:1,overflow:"hidden"}}>
                       <div style={{fontSize:12,fontWeight:600}}>{pt.x}</div>
-                      {pt.notes&&<div style={{fontSize:11,color:"var(--ink-soft)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{pt.notes}</div>}
+                      {pt.notes&&<div style={{fontSize:11,color:theme.subtle,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{pt.notes}</div>}
                     </div>
                     <button className="ghost-btn" onClick={()=>setEditPt({idx:allPts.indexOf(pt),x:pt.x,y:pt.y,notes:pt.notes||""})} style={{padding:"3px 8px",fontSize:11}}>Edit</button>
-                    <button className="ghost-btn" onClick={()=>setPointToDelete(allPts.indexOf(pt))} style={{padding:"3px 8px",fontSize:11,color:"var(--red)"}}>Delete</button>
+                    <button className="ghost-btn" onClick={()=>setPointToDelete(allPts.indexOf(pt))} style={{padding:"3px 8px",fontSize:11,color:"#ef4444",borderColor:"#ef4444"}}>Delete</button>
                   </div>
                 );
               })}
@@ -1018,7 +1150,7 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
 
       <Modal show={pointToDelete!==null} onClose={()=>setPointToDelete(null)} title="Delete point?" emoji="⚠️">
         <div style={{display:"flex",flexDirection:"column",gap:14}}>
-          <div style={{fontSize:14,color:"var(--ink-mid)",lineHeight:1.5}}>This will remove the selected data point from this goal.</div>
+          <div style={{fontSize:14,color:theme.text,lineHeight:1.5}}>This will remove the selected data point from this goal.</div>
           <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
             <button className="ghost-btn" onClick={()=>setPointToDelete(null)}>Cancel</button>
             <button className="action-btn" onClick={()=>deletePointAtIndex(pointToDelete)} style={{background:"var(--red)",color:"#fff"}}>Delete</button>
@@ -1028,7 +1160,7 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
 
       {/* Quick Log Modal */}
       <Modal show={showQL} onClose={()=>setShowQL(false)} title="Quick Log" emoji="⚡">
-        <div style={{fontSize:13,color:"var(--ink-mid)",marginBottom:14}}>Log a session for <strong>{chart.name}</strong> right now.</div>
+        <div style={{fontSize:13,color:theme.text,marginBottom:14}}>Log a session for <strong>{chart.name}</strong> right now.</div>
         <QuickLogForm pal={pal} onSave={(v,d,n,e)=>{addPoint(e,v,d,n);setShowQL(false);}}/>
       </Modal>
 
@@ -1069,7 +1201,7 @@ function QuickLogForm({pal,onSave}){
   );
 }
 
-function MinutesTab({student, selSet, upd, minuteOptions, requestConfirm}){
+function MinutesTab({student, selSet, upd, minuteOptions, requestConfirm, theme, pal}){
   const [selectedOptionId,setSelectedOptionId]=useState(minuteOptions[0]?.id ?? "");
   const [minutesValue,setMinutesValue]=useState("30");
   const [editingId,setEditingId]=useState(null);
@@ -1141,20 +1273,20 @@ function MinutesTab({student, selSet, upd, minuteOptions, requestConfirm}){
 
   return(
     <div style={{flex:1,overflow:"auto",padding:"18px 22px",display:"flex",flexDirection:"column",gap:16}}>
-      <div style={{background:"var(--paper)",borderRadius:"var(--r-lg)",border:"2px solid var(--border)",padding:"18px",boxShadow:"var(--shadow-sm)"}}>
-        <div style={{fontFamily:"var(--font-head)",fontWeight:800,fontSize:14,marginBottom:12}}>
+      <div style={{background:theme.card,borderRadius:"var(--r-lg)",border:`2px solid ${theme.border}`,padding:"18px",boxShadow:`0 8px 20px ${theme.shadow}`}}>
+        <div style={{fontFamily:"var(--font-head)",fontWeight:800,fontSize:14,marginBottom:12,color:theme.text}}>
           {editingId ? "✏️ Edit Minutes Entry" : "⏱ Add Minutes"}
         </div>
 
         {minuteOptions.length===0?(
-          <div style={{padding:"14px 0",textAlign:"center",color:"var(--ink-soft)",fontSize:13}}>
+          <div style={{padding:"14px 0",textAlign:"center",color:theme.subtle,fontSize:13}}>
             No minute options are set up yet. Add a global option from the site settings.
           </div>
         ):(
           <div style={{display:"grid",gridTemplateColumns:"minmax(180px, 1.2fr) minmax(120px, .8fr) auto",gap:10,alignItems:"end"}}>
             <div>
               <SectionLabel>Category</SectionLabel>
-              <select value={selectedOptionId} onChange={e=>setSelectedOptionId(e.target.value)}>
+              <select value={selectedOptionId} onChange={e=>setSelectedOptionId(e.target.value)} style={{background:theme.panel,borderColor:theme.border,color:theme.text}}>
                 {minuteOptions.map(option => (
                   <option key={option.id} value={option.id}>{option.label}</option>
                 ))}
@@ -1165,7 +1297,7 @@ function MinutesTab({student, selSet, upd, minuteOptions, requestConfirm}){
               <input type="number" min={0} step={5} value={minutesValue} onChange={e=>setMinutesValue(e.target.value)} placeholder="30"/>
             </div>
             <div style={{display:"flex",gap:8}}>
-              <button className="action-btn" onClick={saveEntry} style={{background:"var(--teal)",color:"#fff",padding:"10px 16px"}}>{editingId ? "Save" : "Add"}</button>
+              <button className="action-btn" onClick={saveEntry} style={{background:theme.primary,color:"#fff",padding:"10px 16px"}}>{editingId ? "Save" : "Add"}</button>
               {editingId && <button className="ghost-btn" onClick={cancelEdit} style={{padding:"10px 12px"}}>Cancel</button>}
             </div>
           </div>
@@ -1321,6 +1453,59 @@ export default function App(){
     } catch { return []; }
   });
 
+  const [themeKey, setThemeKey] = useState(() => {
+    try {
+      const raw = localStorage.getItem("pm_dashboard_theme");
+      return raw ? JSON.parse(raw) : "sunrise";
+    } catch {
+      return "sunrise";
+    }
+  });
+  const dashboardThemes = {
+    sunrise: {
+      key: "sunrise",
+      page: "linear-gradient(135deg, #fffaf1 0%, #f4fbff 100%)",
+      panel: "rgba(255,255,255,0.72)",
+      card: "rgba(255,255,255,0.8)",
+      softPanel: "#fffaf2",
+      border: "#f4dca6",
+      primary: "#26c6b0",
+      accent: "#ffd166",
+      accentText: "#2d2d3a",
+      text: "#2d2d3a",
+      subtle: "#5f6478",
+      shadow: "rgba(45,45,58,0.10)",
+    },
+    studio: {
+      key: "studio",
+      page: "linear-gradient(135deg, #f4f1ff 0%, #ecfbff 100%)",
+      panel: "rgba(255,255,255,0.72)",
+      card: "rgba(255,255,255,0.82)",
+      softPanel: "#f4f1ff",
+      border: "#d8ccff",
+      primary: "#7c6ef8",
+      accent: "#9ed8ff",
+      accentText: "#2d2d3a",
+      text: "#2d2d3a",
+      subtle: "#5d5f77",
+      shadow: "rgba(76,60,120,0.10)",
+    },
+    night: {
+      key: "night",
+      page: "linear-gradient(135deg, #171d2f 0%, #252f46 100%)",
+      panel: "rgba(20,28,42,0.72)",
+      card: "rgba(25,33,49,0.88)",
+      softPanel: "rgba(39,48,68,0.9)",
+      border: "rgba(140,167,216,0.30)",
+      primary: "#7ad7d3",
+      accent: "#ffd166",
+      accentText: "#132238",
+      text: "#eef5ff",
+      subtle: "rgba(238,245,255,0.75)",
+      shadow: "rgba(10,14,24,0.32)",
+    },
+  };
+  const theme = dashboardThemes[themeKey] ?? dashboardThemes.sunrise;
   const [view,setView]=useState("dashboard"); // "dashboard" | "student"
   const [selSet,setSelSet]=useState(0);
   const [selChart,setSelChart]=useState(0);
@@ -1345,6 +1530,7 @@ export default function App(){
   const [newGroupName,setNewGroupName]=useState("");
   const [sidebarGroupCollapsed,setSidebarGroupCollapsed]=useState({});
   const [sidebarControlsCollapsed,setSidebarControlsCollapsed]=useState(false);
+  const [sidebarOpen,setSidebarOpen]=useState(true);
   const [showEmojiPicker,setShowEmojiPicker]=useState(false);
   const [emojiTarget,setEmojiTarget]=useState(null);
   const [newGName,setNewGName]=useState("");
@@ -1417,6 +1603,7 @@ export default function App(){
   useEffect(()=>{localStorage.setItem("pm_v2",JSON.stringify(sets));},[sets]);
   useEffect(()=>{localStorage.setItem("pm_minute_options",JSON.stringify(minuteOptions));},[minuteOptions]);
   useEffect(()=>{localStorage.setItem("pm_groups",JSON.stringify(groups));},[groups]);
+  useEffect(()=>{localStorage.setItem("pm_dashboard_theme", JSON.stringify(themeKey));},[themeKey]);
 
   const snap=()=>setHistory(h=>{const n=[...h,JSON.stringify(sets)];if(n.length>20)n.shift();return n;});
   const undo=()=>{if(!history.length)return;setHistory(h=>h.slice(0,-1));setSets(JSON.parse(history[history.length-1]));};
@@ -1857,18 +2044,23 @@ export default function App(){
   },[view,history]);
 
   return(
-    <div style={{display:"flex",height:"100vh",width:"100vw",overflow:"hidden",background:"var(--cream)"}}>
+    <div style={{display:"flex",height:"100vh",width:"100vw",overflow:"hidden",background:theme.page,color:theme.text}}>
 
       {/* SIDEBAR */}
-      <div style={{width:272,flexShrink:0,background:"var(--paper)",borderRight:"2px solid var(--border)",display:"flex",flexDirection:"column",height:"100vh",overflow:"hidden"}}>
-        <div style={{padding:"20px 18px 14px",borderBottom:"2px solid var(--border)"}}>
-          <div style={{display:"flex",alignItems:"center",gap:10}}>
-            <div style={{width:38,height:38,borderRadius:11,background:"linear-gradient(135deg,#26c6b0,#4e9af1)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20}}>📈</div>
-            <div>
-              <div style={{fontFamily:"var(--font-head)",fontWeight:900,fontSize:15}}>Progress Monitor</div>
+      <div style={{width:sidebarOpen?272:50,flexShrink:0,background:theme.panel,borderRight:`2px solid ${theme.border}`,display:"flex",flexDirection:"column",height:"100vh",overflow:"hidden",boxShadow:`0 0 0 1px ${theme.border}`,transition:"width .3s ease"}}>
+        {sidebarOpen && (
+          <>
+            <div style={{padding:"20px 18px 14px",borderBottom:`2px solid ${theme.border}`}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                <div style={{display:"flex",alignItems:"center",gap:10}}>
+                  <div style={{width:38,height:38,borderRadius:11,background:"linear-gradient(135deg,#26c6b0,#4e9af1)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20}}>📈</div>
+                  <div>
+                    <div style={{fontFamily:"var(--font-head)",fontWeight:900,fontSize:15,color:theme.text}}>Progress Monitor</div>
+                  </div>
+                </div>
+                <button onClick={()=>setSidebarOpen(false)} style={{background:"none",border:"none",cursor:"pointer",fontSize:16,padding:"4px 2px",opacity:.6}}>✕</button>
+              </div>
             </div>
-          </div>
-        </div>
 
         {/* Home button */}
         <div style={{padding:"8px 12px 0"}}>
@@ -1897,10 +2089,10 @@ export default function App(){
                   const draggedId = event.dataTransfer.getData("text/plain");
                   reorderGroups(draggedId, section.id);
                 }}
-                style={{borderRadius:"var(--r)",border:"2px solid var(--border)",overflow:"hidden",background:"var(--paper)",cursor: section.id === "ungrouped" ? "default" : "grab"}}
+                style={{borderRadius:"var(--r)",border:`2px solid ${theme.border}`,overflow:"hidden",background:theme.card,boxShadow:`0 6px 18px ${theme.shadow}`,cursor: section.id === "ungrouped" ? "default" : "grab"}}
               >
-                <div onClick={()=>toggleSidebarGroup(section.id)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"9px 10px",cursor:"pointer",background:"var(--cream)"}}>
-                  <span style={{fontFamily:"var(--font-head)",fontWeight:800,fontSize:12,color:"var(--ink)"}}>{section.name} ({section.students.length})</span>
+                <div onClick={()=>toggleSidebarGroup(section.id)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"9px 10px",cursor:"pointer",background:theme.softPanel}}>
+                  <span style={{fontFamily:"var(--font-head)",fontWeight:800,fontSize:12,color:theme.text}}>{section.name} ({section.students.length})</span>
                   <div style={{display:"flex",alignItems:"center",gap:6}}>
                     {section.id !== "ungrouped" && (
                       <>
@@ -1931,23 +2123,23 @@ export default function App(){
                         >🗑️</button>
                       </>
                     )}
-                    <span style={{fontSize:12,color:"var(--ink-soft)"}}>{sidebarGroupCollapsed[section.id] ? "▸" : "▾"}</span>
+                    <span style={{fontSize:12,color:theme.subtle}}>{sidebarGroupCollapsed[section.id] ? "▸" : "▾"}</span>
                   </div>
                 </div>
                 {!sidebarGroupCollapsed[section.id] && (
                   <div style={{display:"flex",flexDirection:"column",gap:6,padding:"8px 8px 10px"}}>
                     {section.students.length === 0 ? (
-                      <div style={{padding:"10px",border:"1.5px dashed var(--border)",borderRadius:8,color:"var(--ink-soft)",fontSize:11}}>No students here</div>
+                      <div style={{padding:"10px",border:`1.5px dashed ${theme.border}`,borderRadius:8,color:theme.subtle,fontSize:11}}>No students here</div>
                     ) : section.students.map((s,si)=>{
                       const p=getPal(sets.indexOf(s));
                       const isActive=view==="student"&&selSet===sets.indexOf(s);
                       return (
-                        <div key={`${section.id}-${s.name}-${si}`} style={{borderRadius:"var(--r-sm)",border:`2px solid ${isActive?p.border:"var(--border)"}`,overflow:"hidden",transition:"border-color .15s"}}>
-                          <div onClick={()=>handleSelectStudent(sets.indexOf(s))} style={{display:"flex",alignItems:"center",gap:9,padding:"8px 8px",background:isActive?p.bg:"transparent",cursor:"pointer",transition:"background .15s"}}>
+                        <div key={`${section.id}-${s.name}-${si}`} style={{borderRadius:"var(--r-sm)",border:`2px solid ${isActive ? p.border : theme.border}`,overflow:"hidden",transition:"border-color .15s"}}>
+                          <div onClick={()=>handleSelectStudent(sets.indexOf(s))} style={{display:"flex",alignItems:"center",gap:9,padding:"8px 8px",background:isActive ? theme.softPanel : "transparent", cursor:"pointer", transition:"background .15s"}}>
                             <div style={{width:26,height:26,borderRadius:"50%",background:`linear-gradient(135deg,${p.chip},${p.chip}99)`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,flexShrink:0}}>{getStudentEmoji(s)}</div>
                             <div style={{flex:1,overflow:"hidden"}}>
-                              <div style={{fontFamily:"var(--font-head)",fontWeight:800,fontSize:12,color:isActive?p.text:"var(--ink)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.name}</div>
-                              <div style={{fontSize:10,color:"var(--ink-soft)"}}>{s.charts.length} goal{s.charts.length!==1?"s":""}</div>
+                              <div style={{fontFamily:"var(--font-head)",fontWeight:800,fontSize:12,color:theme.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.name}</div>
+                              <div style={{fontSize:10,color:theme.subtle}}>{s.charts.length} goal{s.charts.length!==1?"s":""}</div>
                             </div>
                             <div style={{display:"flex",gap:1}}>
                               <button onClick={e=>{e.stopPropagation();setRenameTarget({type:"student",studentIndex:sets.indexOf(s),currentName:s.name,currentEmoji:s.emoji ?? getStudentEmoji(s)});}} style={{background:"none",border:"none",cursor:"pointer",fontSize:11,opacity:.45,padding:"2px"}}>✏️</button>
@@ -1981,16 +2173,16 @@ export default function App(){
           </div>
         </div>
 
-        <div style={{padding:"12px",borderTop:"2px solid var(--border)"}}>
+        <div style={{padding:"12px",borderTop:`2px solid ${theme.border}`,background:theme.softPanel}}>
           <div onClick={()=>setSidebarControlsCollapsed(value => !value)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer",padding:"4px 2px 8px",userSelect:"none"}}>
-            <span style={{fontFamily:"var(--font-head)",fontWeight:800,fontSize:12,color:"var(--ink-soft)",letterSpacing:"0.08em",textTransform:"uppercase"}}>Quick Tools</span>
-            <span style={{fontSize:12,color:"var(--ink-soft)"}}>{sidebarControlsCollapsed ? "▸" : "▾"}</span>
+            <span style={{fontFamily:"var(--font-head)",fontWeight:800,fontSize:12,color:theme.subtle,letterSpacing:"0.08em",textTransform:"uppercase"}}>Quick Tools</span>
+            <span style={{fontSize:12,color:theme.subtle}}>{sidebarControlsCollapsed ? "▸" : "▾"}</span>
           </div>
           {!sidebarControlsCollapsed && (
             <div style={{display:"flex",flexDirection:"column",gap:7}}>
-              <button className="action-btn" onClick={()=>setShowAS(true)} style={{background:"var(--teal)",color:"#fff",justifyContent:"center",width:"100%"}}>+ Add Student</button>
-              <button className="ghost-btn" onClick={()=>setShowGroupModal(true)} style={{justifyContent:"center",fontSize:11}}>+ Add Group</button>
-              <button className="ghost-btn" onClick={()=>setShowMinuteOptions(true)} style={{justifyContent:"center",fontSize:11}}>⏱ Minutes Options</button>
+              <button className="action-btn" onClick={()=>setShowAS(true)} style={{background:theme.primary,color:"#fff",justifyContent:"center",width:"100%"}}>+ Add Student</button>
+              <button className="ghost-btn" onClick={()=>setShowGroupModal(true)} style={{justifyContent:"center",fontSize:11, color:theme.text, borderColor: theme.border, background: theme.card}}>+ Add Group</button>
+              <button className="ghost-btn" onClick={()=>setShowMinuteOptions(true)} style={{justifyContent:"center",fontSize:11, color:theme.text, borderColor: theme.border, background: theme.card}}>⏱ Minutes Options</button>
               <div style={{display:"flex",gap:6}}>
                 <button className="ghost-btn" onClick={exportJSON} style={{flex:1,justifyContent:"center"}}>↓ Export</button>
                 <label className="ghost-btn" style={{flex:1,justifyContent:"center",cursor:"pointer"}}>↑ Import<input type="file" accept=".json" onChange={importJSON} style={{display:"none"}}/></label>
@@ -1999,6 +2191,13 @@ export default function App(){
             </div>
           )}
         </div>
+          </>
+        )}
+        {!sidebarOpen && (
+          <div style={{padding:"8px",display:"flex",alignItems:"center",justifyContent:"center",borderBottom:`2px solid ${theme.border}`}}>
+            <button onClick={()=>setSidebarOpen(true)} style={{background:"none",border:"none",cursor:"pointer",fontSize:18,padding:"4px",color:theme.text}}>≡</button>
+          </div>
+        )}
       </div>
 
       {/* MAIN */}
@@ -2020,42 +2219,52 @@ export default function App(){
             setHomeAccommodation={setHomeAccommodation}
             homeGroupFilter={homeGroupFilter}
             setHomeGroupFilter={setHomeGroupFilter}
+            theme={theme}
+            setTheme={setThemeKey}
           />
         ):student?(
           <>
             {/* Topbar */}
-            <div style={{padding:"12px 22px 0",background:"var(--paper)",borderBottom:"2px solid var(--border)",flexShrink:0}}>
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
-                <div style={{display:"flex",alignItems:"center",gap:8}}>
-                  <button className="ghost-btn" onClick={()=>setView("dashboard")} style={{padding:"4px 10px",fontSize:12}}>← Home</button>
+            <div style={{padding:"12px 22px 0",background:theme.panel,borderBottom:`2px solid ${theme.border}`,flexShrink:0, color:theme.text, boxShadow:`0 8px 20px ${theme.shadow}`}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,gap:12,flexWrap:"wrap"}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                  <button className="ghost-btn" onClick={()=>setView("dashboard")} style={{padding:"4px 10px",fontSize:12, color:theme.text, borderColor: theme.border, background: theme.card}}>← Home</button>
                   <span style={{fontSize:19}}>{getEmoji(student?.name??"")}</span>
-                  <span style={{fontFamily:"var(--font-head)",fontWeight:900,fontSize:19}}>{student?.name}</span>
+                  <span style={{fontFamily:"var(--font-head)",fontWeight:900,fontSize:19,color:theme.text}}>{student?.name}</span>
                   {activeTab==="goals"&&chart&&(
-                    <><span style={{color:"var(--ink-soft)",fontSize:15}}>›</span>
+                    <><span style={{color:theme.subtle,fontSize:15}}>›</span>
                     <span style={{fontFamily:"var(--font-head)",fontWeight:700,fontSize:15,color:pal.text}}>{chart.name}</span></>
                   )}
                 </div>
-                <div style={{display:"flex",gap:8}}>
-                  {activeTab==="goals"&&<><button className="ghost-btn" onClick={undo} disabled={!history.length}>↩ Undo</button><button className="ghost-btn" onClick={()=>setShowAtt(true)}>📎 Files</button></>}
-                  <button className="ghost-btn" onClick={()=>setShowReport(true)}>📄 Report</button>
+                <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                  <div style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 10px", borderRadius: 999, background: theme.card, border: `1.5px solid ${theme.border}` }}>
+                    <span style={{ fontSize: 12 }}>🎨</span>
+                    <select value={theme.key} onChange={event => setThemeKey(event.target.value)} style={{ background: "transparent", border: "none", color: theme.text, minWidth: 84, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+                      <option value="sunrise">Sunrise</option>
+                      <option value="studio">Studio</option>
+                      <option value="night">Night</option>
+                    </select>
+                  </div>
+                  {activeTab==="goals"&&<><button className="ghost-btn" onClick={undo} disabled={!history.length} style={{color:theme.text, borderColor: theme.border, background: theme.card}}>↩ Undo</button><button className="ghost-btn" onClick={()=>setShowAtt(true)} style={{color:theme.text, borderColor: theme.border, background: theme.card}}>📎 Files</button></>}
+                  <button className="ghost-btn" onClick={()=>setShowReport(true)} style={{color:theme.text, borderColor: theme.border, background: theme.card}}>📄 Report</button>
                 </div>
               </div>
               <div style={{display:"flex",gap:4,paddingBottom:12,flexWrap:"wrap"}}>
-                <button className={`tab-btn${activeTab==="goals"?" active":""}`} onClick={()=>setActiveTab("goals")}>📊 Goals</button>
-                <button className={`tab-btn${activeTab==="accommodations"?" active":""}`} onClick={()=>setActiveTab("accommodations")}>🛠 Accommodations</button>
-                <button className={`tab-btn${activeTab==="minutes"?" active":""}`} onClick={()=>setActiveTab("minutes")}>⏱ Minutes</button>
+                <button className={`tab-btn${activeTab==="goals"?" active":""}`} onClick={()=>setActiveTab("goals")} style={{background: activeTab === "goals" ? theme.card : "transparent", borderColor: theme.border, color: theme.text}}>📊 Goals</button>
+                <button className={`tab-btn${activeTab==="accommodations"?" active":""}`} onClick={()=>setActiveTab("accommodations")} style={{background: activeTab === "accommodations" ? theme.card : "transparent", borderColor: theme.border, color: theme.text}}>🛠 Accommodations</button>
+                <button className={`tab-btn${activeTab==="minutes"?" active":""}`} onClick={()=>setActiveTab("minutes")} style={{background: activeTab === "minutes" ? theme.card : "transparent", borderColor: theme.border, color: theme.text}}>⏱ Minutes</button>
               </div>
             </div>
 
             {activeTab==="accommodations"?(
-              <AccommodationsTab student={student} selSet={selSet} upd={upd}/>
+              <AccommodationsTab student={student} selSet={selSet} upd={upd} theme={theme} pal={pal}/>
             ):activeTab==="minutes"?(
-              <MinutesTab student={student} selSet={selSet} upd={upd} minuteOptions={minuteOptions} requestConfirm={requestConfirm}/>
+              <MinutesTab student={student} selSet={selSet} upd={upd} minuteOptions={minuteOptions} requestConfirm={requestConfirm} theme={theme} pal={pal}/>
             ):(
               <GoalsTab sets={sets} selSet={selSet} selChart={selChart} setSelChart={setSelChart}
                 upd={upd} snap={snap} undo={undo} history={history}
                 showAtt={showAtt} setShowAtt={setShowAtt} setShowAG={setShowAG}
-                chartRef={chartRef} editPt={editPt} setEditPt={setEditPt}/>
+                chartRef={chartRef} editPt={editPt} setEditPt={setEditPt} theme={theme} pal={pal}/>
             )}
           </>
         ):(
