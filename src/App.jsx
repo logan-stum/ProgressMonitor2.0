@@ -141,6 +141,26 @@ const getStudentEmoji = student => student?.emoji?.trim() || getEmoji(student?.n
 const clamp    = (v,lo,hi) => Math.max(lo,Math.min(hi,v));
 const sanitize = arr => (Array.isArray(arr)?arr:[]).map(p=>({...p,y:clamp(Number(p.y),0,100)})).sort((a,b)=>new Date(a.x)-new Date(b.x));
 const todayStr = () => new Date().toISOString().split("T")[0];
+// Attachments used to live on individual goals (chart.attachments). They're now shared across
+// every goal for a student (student.attachments) so a file uploaded once is visible everywhere.
+// This normalizer folds any legacy per-chart attachments up onto the student the first time old
+// data (from localStorage or an imported file) is loaded, so nothing gets lost in the move.
+const normalizeStudentAttachments = student => {
+  const charts = Array.isArray(student.charts) ? student.charts : [];
+  const legacyChartAttachments = charts.flatMap(c => Array.isArray(c.attachments) ? c.attachments : []);
+  return {
+    ...student,
+    attachments: [
+      ...(Array.isArray(student.attachments) ? student.attachments : []),
+      ...legacyChartAttachments,
+    ],
+    charts: charts.map(c => {
+      if (!("attachments" in c)) return c;
+      const { attachments, ...rest } = c;
+      return rest;
+    }),
+  };
+};
 const currentYear = () => new Date().getFullYear();
 
 function burst(x,y,big=false) {
@@ -1687,9 +1707,9 @@ export default function App(){
   const [sets,setSets]=useState(()=>{
     try{
       const s=localStorage.getItem("pm_v2");
-      const parsed = s ? JSON.parse(s) : [{name:"Alex Johnson",collapsed:false,accommodations:[],accDays:{},minutes:[],
-        charts:[{name:"Reading Fluency",startValue:40,startDate:"",goalValue:90,goalDate:"",data:[],notes:"",attachments:[]}]}];
-      return Array.isArray(parsed) ? parsed.map(student => ({
+      const parsed = s ? JSON.parse(s) : [{name:"Alex Johnson",collapsed:false,accommodations:[],accDays:{},minutes:[],attachments:[],
+        charts:[{name:"Reading Fluency",startValue:40,startDate:"",goalValue:90,goalDate:"",data:[],notes:""}]}];
+      return Array.isArray(parsed) ? parsed.map(student => normalizeStudentAttachments({
         ...student,
         accommodations: Array.isArray(student.accommodations) ? student.accommodations : [],
         accDays: student.accDays ?? {},
@@ -1862,12 +1882,12 @@ export default function App(){
     if(!newSName.trim()) return;
     const name = newSName.trim();
     const emoji = (newSEmoji.trim() || getStudentEmoji({ name })).slice(0, 2);
-    upd(d => d.push({ name, emoji, groupId: "", collapsed: false, accommodations: [], accDays: {}, minutes: [], charts: [] }));
+    upd(d => d.push({ name, emoji, groupId: "", collapsed: false, accommodations: [], accDays: {}, minutes: [], attachments: [], charts: [] }));
     setSelSet(sets.length);setSelChart(0);setActiveTab("goals");setView("student");setNewSName("");setNewSEmoji("");setShowAS(false);
   };
   const addGoal=()=>{
     if(!newGName.trim()) return;
-    upd(d=>d[selSet].charts.push({name:newGName.trim(),startValue:0,startDate:"",goalValue:100,goalDate:"",data:[],notes:"",attachments:[],quarters:[]}));
+    upd(d=>d[selSet].charts.push({name:newGName.trim(),startValue:0,startDate:"",goalValue:100,goalDate:"",data:[],notes:"",quarters:[]}));
     setSelChart(student.charts.length);setNewGName("");setShowAG(false);
   };
   const addGroup=()=>{
@@ -2039,6 +2059,49 @@ export default function App(){
     `;
 
     printHtmlDocument(html, `Parent Report - ${student?.name ?? ""} - ${chart.name ?? "Goal"}`);
+  };
+
+  // Attachments are shared across a whole student (see normalizeStudentAttachments above), so
+  // these two act on every file that student has, regardless of which goal or tab is open.
+  const downloadAllAttachments = () => {
+    const atts = student?.attachments ?? [];
+    if (!atts.length) return;
+    // Stagger the downloads slightly — firing many `a.click()` calls in the same tick gets
+    // several of them silently dropped by the browser's popup/download-blocking heuristics.
+    atts.forEach((f, i) => {
+      setTimeout(() => {
+        try {
+          const bytes = Uint8Array.from(atob(f.content), c => c.charCodeAt(0));
+          const url = URL.createObjectURL(new Blob([bytes], { type: f.type || "application/octet-stream" }));
+          const a = document.createElement("a");
+          a.href = url; a.download = f.name; a.click();
+          setTimeout(() => URL.revokeObjectURL(url), 4000);
+        } catch (error) {
+          console.error("Failed to download attachment", f.name, error);
+        }
+      }, i * 250);
+    });
+  };
+  const printAllAttachments = () => {
+    const atts = student?.attachments ?? [];
+    if (!atts.length) return;
+    const pages = atts.map(f => {
+      const type = f.type || "";
+      const body = type.startsWith("image/")
+        ? `<img src="data:${type};base64,${f.content}" style="max-width:100%;max-height:9in;display:block;margin:0 auto;border-radius:8px" />`
+        : type === "application/pdf"
+          ? `<embed src="data:application/pdf;base64,${f.content}" type="application/pdf" style="width:100%;height:9.5in;border:1px solid #e7e1d8;border-radius:8px" />`
+          : `<div style="text-align:center;padding:70px 20px;color:#77778d;border:1.5px dashed #e7e1d8;border-radius:12px"><div style="font-size:44px;margin-bottom:10px">📄</div><div style="font-weight:700;font-size:15px;color:#2d2d3a">${escapeHtml(f.name)}</div><div style="font-size:12px;margin-top:6px">${escapeHtml(type || "Unknown type")} · ${Math.round((f.size||0)/1024)}KB</div><div style="font-size:12px;margin-top:12px">This file type can't be previewed for printing — use "Download All" to save it instead.</div></div>`;
+      return `
+        <div class="report-page">
+          <div class="report">
+            <div class="report-header"><div><div class="report-name">${escapeHtml(f.name)}</div><div class="report-meta">${escapeHtml(student?.name ?? "")} · Attachment</div></div><span class="badge"></span></div>
+            ${body}
+          </div>
+        </div>
+      `;
+    }).join("");
+    printHtmlDocument(pages, `Attachments - ${student?.name ?? ""}`);
   };
   const printStudentReport = () => {
     const student = sets[selSet];
@@ -2315,7 +2378,7 @@ export default function App(){
       const d=JSON.parse(ev.target.result);
       const nextSets = Array.isArray(d) ? d : (d && Array.isArray(d.students) ? d.students : null);
       if (!Array.isArray(nextSets)) throw new Error("Invalid file");
-      const normalizedSets = nextSets.map(student => ({
+      const normalizedSets = nextSets.map(student => normalizeStudentAttachments({
         ...student,
         accommodations: Array.isArray(student.accommodations) ? student.accommodations : [],
         accDays: student.accDays ?? {},
@@ -2579,7 +2642,8 @@ export default function App(){
                       <option value="night">Night</option>
                     </select>
                   </div>
-                  {activeTab==="goals"&&<><button className="ghost-btn" onClick={undo} disabled={!history.length} style={{color:theme.text, borderColor: theme.border, background: theme.card}}>↩ Undo</button><button className="ghost-btn" onClick={()=>setShowAtt(true)} style={{color:theme.text, borderColor: theme.border, background: theme.card}}>📎 Files</button></>}
+                  {activeTab==="goals"&&<button className="ghost-btn" onClick={undo} disabled={!history.length} style={{color:theme.text, borderColor: theme.border, background: theme.card}}>↩ Undo</button>}
+                  {(activeTab==="goals"||activeTab==="accommodations")&&<button className="ghost-btn" onClick={()=>setShowAtt(true)} style={{color:theme.text, borderColor: theme.border, background: theme.card}}>📎 Files</button>}
                   <button className="ghost-btn" onClick={()=>setShowReport(true)} style={{color:theme.text, borderColor: theme.border, background: theme.card}}>📄 Report</button>
                 </div>
               </div>
@@ -2715,24 +2779,34 @@ export default function App(){
       />
 
       <Modal show={showAtt} onClose={()=>setShowAtt(false)} title="Attachments" emoji="📎">
-        {chart&&(
+        {student&&(
           <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            <div style={{fontSize:12,color:"var(--ink-soft)"}}>Shared across all of {student.name}'s goals.</div>
             <div><SectionLabel>Upload a File</SectionLabel>
               <input type="file" style={{marginTop:6}} onChange={e=>{
                 const f=e.target.files[0];if(!f) return;
                 const r=new FileReader();
-                r.onload=ev=>{upd(d=>{if(!Array.isArray(d[selSet].charts[selChart].attachments))d[selSet].charts[selChart].attachments=[];d[selSet].charts[selChart].attachments.push({name:f.name,type:f.type,size:f.size,content:ev.target.result.split(",")[1]});});};
+                r.onload=ev=>{upd(d=>{if(!Array.isArray(d[selSet].attachments))d[selSet].attachments=[];d[selSet].attachments.push({name:f.name,type:f.type,size:f.size,content:ev.target.result.split(",")[1]});});};
                 r.readAsDataURL(f);e.target.value="";
               }}/></div>
-            {(chart.attachments??[]).length===0?(<div style={{textAlign:"center",padding:"14px 0",color:"var(--ink-soft)",fontSize:13}}>No files yet</div>
-            ):(chart.attachments??[]).map((f,i)=>(
-              <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",background:"var(--cream)",borderRadius:8,border:"1.5px solid var(--border)"}}>
-                <span style={{fontSize:20}}>📄</span>
-                <span style={{flex:1,fontSize:13,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.name}</span>
-                <span style={{fontSize:11,color:"var(--ink-soft)"}}>{Math.round(f.size/1024)}KB</span>
-                <button className="ghost-btn" onClick={()=>{const bytes=Uint8Array.from(atob(f.content),c=>c.charCodeAt(0));const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([bytes],{type:f.type}));a.download=f.name;a.click();}} style={{padding:"3px 10px"}}>↓</button>
-              </div>
-            ))}
+            {(student.attachments??[]).length===0?(<div style={{textAlign:"center",padding:"14px 0",color:"var(--ink-soft)",fontSize:13}}>No files yet</div>
+            ):(
+              <>
+                <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                  <button className="ghost-btn" onClick={downloadAllAttachments} style={{padding:"5px 12px",fontSize:12}}>⬇ Download All ({(student.attachments??[]).length})</button>
+                  <button className="ghost-btn" onClick={printAllAttachments} style={{padding:"5px 12px",fontSize:12}}>🖨 Print All</button>
+                </div>
+                {(student.attachments??[]).map((f,i)=>(
+                  <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",background:"var(--cream)",borderRadius:8,border:"1.5px solid var(--border)"}}>
+                    <span style={{fontSize:20}}>📄</span>
+                    <span style={{flex:1,fontSize:13,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.name}</span>
+                    <span style={{fontSize:11,color:"var(--ink-soft)"}}>{Math.round(f.size/1024)}KB</span>
+                    <button className="ghost-btn" onClick={()=>{const bytes=Uint8Array.from(atob(f.content),c=>c.charCodeAt(0));const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([bytes],{type:f.type}));a.download=f.name;a.click();}} style={{padding:"3px 10px"}}>↓</button>
+                    <button className="ghost-btn" onClick={()=>upd(d=>{d[selSet].attachments=(d[selSet].attachments??[]).filter((_,j)=>j!==i);})} style={{padding:"3px 10px",color:"var(--red)"}}>🗑️</button>
+                  </div>
+                ))}
+              </>
+            )}
             <div style={{display:"flex",justifyContent:"flex-end"}}><button className="ghost-btn" onClick={()=>setShowAtt(false)}>Close</button></div>
           </div>
         )}
