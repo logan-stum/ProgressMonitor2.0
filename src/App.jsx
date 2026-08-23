@@ -653,7 +653,7 @@ function Dashboard({
           const levelColor = level === "red" ? "var(--red)" : level === "yellow" ? "var(--yellow)" : null;
           const levelBg = level === "red" ? "rgba(255,107,107,0.10)" : level === "yellow" ? "rgba(255,209,102,0.16)" : theme.softPanel;
           return (
-            <div key={ci} style={{ background: levelBg, borderRadius: 8, padding: "8px 10px", border: `1.5px solid ${levelColor ? levelColor : p.border + "44"}` }}>
+            <div key={ci} onClick={event => { event.stopPropagation(); onSelectStudent(index, ci); }} style={{ background: levelBg, borderRadius: 8, padding: "8px 10px", border: `1.5px solid ${levelColor ? levelColor : p.border + "44"}`, cursor: "pointer" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
                 <span style={{ fontSize: 12, fontWeight: 700, color: theme.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, display: "flex", alignItems: "center", gap: 4 }}>
                   {level && <span title={level === "red" ? `Below target for ${streakCount} entries in a row` : "Newly below target"}>{level === "red" ? "🔴" : "🟡"}</span>}
@@ -2021,7 +2021,7 @@ export default function App(){
     setRenameValue("");
     setRenameEmoji("");
   };
-  const handleSelectStudent=si=>{setSelSet(si);setSelChart(0);setActiveTab("goals");setView("student");};
+  const handleSelectStudent=(si,ci=0)=>{setSelSet(si);setSelChart(ci);setActiveTab("goals");setView("student");};
   const toggleSidebarGroup = key => setSidebarGroupCollapsed(prev => ({ ...prev, [key]: !prev[key] }));
   const sidebarSections = [
     ...groups.map(group => ({ id: group.id, name: group.name, students: sets.filter(student => student.groupId === group.id) })),
@@ -2229,7 +2229,7 @@ export default function App(){
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,gap:12,flexWrap:"wrap"}}>
                 <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
                   <button className="ghost-btn" onClick={()=>setView("dashboard")} style={{padding:"4px 10px",fontSize:12, color:theme.text, borderColor: theme.border, background: theme.card}}>← Home</button>
-                  <span style={{fontSize:19}}>{getEmoji(student?.name??"")}</span>
+                  <span style={{fontSize:19}}>{getStudentEmoji(student)}</span>
                   <span style={{fontFamily:"var(--font-head)",fontWeight:900,fontSize:19,color:theme.text}}>{student?.name}</span>
                   {activeTab==="goals"&&chart&&(
                     <><span style={{color:theme.subtle,fontSize:15}}>›</span>
