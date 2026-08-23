@@ -5,8 +5,9 @@ import {
   Chart as ChartJS, CategoryScale, LinearScale, PointElement,
   LineElement, Title, Tooltip, Legend, TimeScale, Filler,
 } from "chart.js";
+import zoomPlugin from "chartjs-plugin-zoom";
 
-ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, TimeScale, Filler);
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, TimeScale, Filler, zoomPlugin);
 
 // ─── Global styles ────────────────────────────────────────────────────────────
 const css = document.createElement("style");
@@ -588,24 +589,28 @@ function Dashboard({
     const goalStatuses = student.charts.map(c => {
       const cPts = c.data ?? [];
       const cLatest = cPts[cPts.length - 1];
-      if (!cLatest) return { cPts, cLatest, level: null, diff: null, onTrackValue: null };
+      if (!cLatest) return { cPts, cLatest, level: null, diff: null, onTrackValue: null, streakCount: 0 };
       const onTrackValue = getOnTrackValue(c, cLatest.x);
-      if (onTrackValue == null) return { cPts, cLatest, level: null, diff: null, onTrackValue: null };
+      if (onTrackValue == null) return { cPts, cLatest, level: null, diff: null, onTrackValue: null, streakCount: 0 };
       const diff = onTrackValue - cLatest.y;
       // Small epsilon so floating-point rounding on a point that's essentially right on the
       // trend line doesn't get flagged as "behind" by a fraction of a point.
       const EPS = 0.05;
-      let level = null;
-      if (diff > EPS) {
-        const cPrev = cPts[cPts.length - 2];
-        const prevOnTrackValue = cPrev ? getOnTrackValue(c, cPrev.x) : null;
-        const prevDiff = prevOnTrackValue != null ? prevOnTrackValue - cPrev.y : null;
-        const prevWasBelow = prevDiff != null && prevDiff > EPS;
-        level = prevWasBelow ? "red" : "yellow";
+
+      // Count how many consecutive entries, ending at the latest one, fall below the trend
+      // line's target for their own date. This drives the red/yellow severity below.
+      let streakCount = 0;
+      for (let i = cPts.length - 1; i >= 0; i--) {
+        const pt = cPts[i];
+        const ptTarget = getOnTrackValue(c, pt.x);
+        if (ptTarget == null || ptTarget - pt.y <= EPS) break;
+        streakCount++;
       }
+
+      const level = streakCount >= 2 ? "red" : streakCount === 1 ? "yellow" : null;
       if (level === "red") redGoalCount++;
       else if (level === "yellow") yellowGoalCount++;
-      return { cPts, cLatest, level, diff, onTrackValue };
+      return { cPts, cLatest, level, diff, onTrackValue, streakCount };
     });
 
     return (
@@ -642,7 +647,7 @@ function Dashboard({
         )}
 
         {student.charts.map((c, ci) => {
-          const { cPts, cLatest, level, diff, onTrackValue } = goalStatuses[ci];
+          const { cPts, cLatest, level, diff, onTrackValue, streakCount } = goalStatuses[ci];
           if (!cLatest) return null;
           const goalPct = c.goalValue ? Math.round((cLatest.y / c.goalValue) * 100) : null;
           const levelColor = level === "red" ? "var(--red)" : level === "yellow" ? "var(--yellow)" : null;
@@ -651,14 +656,14 @@ function Dashboard({
             <div key={ci} style={{ background: levelBg, borderRadius: 8, padding: "8px 10px", border: `1.5px solid ${levelColor ? levelColor : p.border + "44"}` }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
                 <span style={{ fontSize: 12, fontWeight: 700, color: theme.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, display: "flex", alignItems: "center", gap: 4 }}>
-                  {level && <span title={level === "red" ? "Below target for two entries in a row" : "Newly below target"}>{level === "red" ? "🔴" : "🟡"}</span>}
+                  {level && <span title={level === "red" ? `Below target for ${streakCount} entries in a row` : "Newly below target"}>{level === "red" ? "🔴" : "🟡"}</span>}
                   {c.name}
                 </span>
                 <span style={{ fontFamily: "var(--font-head)", fontWeight: 900, fontSize: 14, color: levelColor || p.chip, flexShrink: 0, marginLeft: 6 }}>{cLatest.y}%</span>
               </div>
               {onTrackValue != null && (
                 <div style={{ fontSize: 10, color: levelColor || theme.subtle, marginBottom: 4 }}>
-                  {level === "red" && `Target ${Math.round(onTrackValue * 10) / 10}% by ${cLatest.x} — below target 2 entries in a row`}
+                  {level === "red" && `Target ${Math.round(onTrackValue * 10) / 10}% by ${cLatest.x} — below target ${streakCount} entries in a row`}
                   {level === "yellow" && `Target ${Math.round(onTrackValue * 10) / 10}% by ${cLatest.x} — newly below target`}
                   {!level && `On pace · target was ${Math.round(onTrackValue * 10) / 10}% as of ${cLatest.x}`}
                 </div>
@@ -941,6 +946,25 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
   const goalChartDate = parseChartDate(chart?.goalDate);
   const hasValidTargetDates = Boolean(startChartDate && goalChartDate && startChartDate.getTime() <= goalChartDate.getTime());
 
+  // Users can zoom/pan into a portion of the chart (see zoom plugin options below). The tick
+  // generator below recomputes its spacing against whatever date range is *currently visible* —
+  // daily for a short span, weekly for a several-month span, monthly for a multi-year span, etc.
+  // — so ticks stay readable at every zoom level instead of a fixed set built once for the full range.
+  const generateNiceTicks = (minTime, maxTime) => {
+    if (!Number.isFinite(minTime) || !Number.isFinite(maxTime) || maxTime <= minTime) return null;
+    const DAY = 24 * 60 * 60 * 1000;
+    const totalDays = Math.max(1, Math.round((maxTime - minTime) / DAY));
+    const niceStepsDays = [1, 2, 3, 5, 7, 14, 21, 30, 60, 90, 182, 365];
+    const maxTicks = 25;
+    let stepDays = niceStepsDays[niceStepsDays.length - 1];
+    for (const candidate of niceStepsDays) {
+      if (totalDays / candidate <= maxTicks) { stepDays = candidate; break; }
+    }
+    const tickTimes = new Set([minTime, maxTime]);
+    for (let t = minTime; t <= maxTime; t += stepDays * DAY) tickTimes.add(t);
+    return Array.from(tickTimes).sort((a, b) => a - b);
+  };
+
   const chartData={
     datasets:[
       {label:chart?.name??"Progress",data:pts,borderColor:pal.chip,backgroundColor:pal.chip+"22",tension:0.35,fill:true,
@@ -962,9 +986,21 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
         titleFont:{family:"'Nunito',sans-serif",weight:"800"},bodyFont:{family:"'Nunito Sans',sans-serif",size:12},
         callbacks:{label:ctx=>` ${ctx.parsed.y}%${ctx.raw?.notes?`  · ${ctx.raw.notes}`:""}`}},
       chartBg:chartBgPlugin,
+      zoom:{
+        pan:{enabled:true,mode:"x"},
+        zoom:{wheel:{enabled:true},pinch:{enabled:true},drag:{enabled:false},mode:"x"},
+        limits:{x:{min:"original",max:"original",minRange:2*24*60*60*1000}},
+      },
     },
     scales:{
-      x:{type:"time",time:{unit:"day",tooltipFormat:"MMM d, yyyy"},grid:{color:"rgba(0,0,0,0.04)"},ticks:{color:"#9898b0",font:{family:"'Nunito Sans'",size:11}}},
+      x:{type:"time",time:{unit:"day",tooltipFormat:"MMM d, yyyy"},grid:{color:"rgba(0,0,0,0.04)"},
+         ticks:{color:"#9898b0",font:{family:"'Nunito Sans'",size:11},autoSkip:false,maxRotation:60,minRotation:0},
+         afterBuildTicks: axis => {
+           // axis.min/axis.max already reflect any active zoom/pan, so this regenerates ticks
+           // for whatever window is currently visible instead of the original full range.
+           const niceTicks = generateNiceTicks(axis.min, axis.max);
+           if (niceTicks) axis.ticks = niceTicks.map(value => ({ value }));
+         }},
       y:{min:0,max:100,grid:{color:"rgba(0,0,0,0.04)"},ticks:{color:"#9898b0",font:{family:"'Nunito'",size:11},callback:v=>v+"%"}},
     },
     onClick:(evt,els)=>{
@@ -1018,7 +1054,8 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,gap:10}}>
           <div style={{fontFamily:"var(--font-head)",fontWeight:800,fontSize:14,color:theme.text}}>Progress Chart — {viewYear}</div>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-            <div style={{fontSize:11,color:"var(--ink-soft)"}}>Click a point to select it · filled dot = has note</div>
+            <div style={{fontSize:11,color:"var(--ink-soft)"}}>Click a point to select it · filled dot = has note · scroll/pinch to zoom · drag to pan</div>
+            <button className="ghost-btn" onClick={()=>chartRef.current?.resetZoom()} style={{padding:"4px 10px",fontSize:11}}>Reset zoom</button>
             {selectedPointIndex!==null&&(
               <button className="ghost-btn" onClick={()=>setPointToDelete(selectedPointIndex)} style={{padding:"4px 10px",fontSize:11,color:"var(--red)"}}>Delete selected</button>
             )}
