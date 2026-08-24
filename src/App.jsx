@@ -1016,13 +1016,17 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
     });
   };
 
-  // Chart zones plugin (green/yellow/red bands)
-  const goalVal = chart?.goalValue ?? 100;
+  // Chart zones plugin (green/yellow/red bands). Dynamic values (goalVal) are read from
+  // pluginOptions (chart.options.plugins.chartBg below) rather than closed over directly —
+  // react-chartjs-2 refreshes chart.options on every render but does NOT re-register the
+  // `plugins` array on updates, so a value captured via closure here would stay frozen at
+  // whatever it was when the chart first mounted, only catching up on a full page refresh.
   const chartBgPlugin = {
     id: "chartBg",
-    beforeDraw(ch) {
+    beforeDraw(ch, args, pluginOptions) {
       const { ctx, chartArea:{ top, bottom, left, right }, scales:{ y } } = ch;
       if (!y) return;
+      const goalVal = pluginOptions?.goalVal ?? 100;
       const zones = [
         { from: goalVal,        to: 100,       color: "rgba(82,201,122,0.08)" },
         { from: goalVal * 0.7,  to: goalVal,   color: "rgba(255,209,102,0.08)" },
@@ -1048,9 +1052,11 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
   // Draws a vertical quarter-end line from the very top to the very bottom
   // of the chart plotting area. The line follows zoom/pan because its x pixel
   // position is calculated from the currently visible time scale.
+  // Same as chartBgPlugin above: `quarters` comes from pluginOptions (chart.options.plugins.
+  // quarterLines) so marking/deleting a quarter shows up on next draw, not just after a refresh.
   const quarterLinePlugin = {
     id: "quarterLines",
-    afterDraw(ch) {
+    afterDraw(ch, args, pluginOptions) {
       const { ctx, chartArea, scales } = ch;
       const x = scales.x;
 
@@ -1058,8 +1064,9 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
 
       const { top, bottom, left, right } = chartArea;
       const nextFlagPositions = [];
+      const quartersForDraw = pluginOptions?.quarters ?? [];
 
-      quarters.forEach(q => {
+      quartersForDraw.forEach(q => {
         const qDate = parseChartDate(q.date);
         if (!qDate) return;
 
@@ -1151,8 +1158,8 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
       tooltip:{backgroundColor:"#2d2d3a",titleColor:"#fff",bodyColor:"#9898b0",padding:12,cornerRadius:10,
         titleFont:{family:"'Nunito',sans-serif",weight:"800"},bodyFont:{family:"'Nunito Sans',sans-serif",size:12},
         callbacks:{label:ctx=>` ${ctx.parsed.y}%${ctx.raw?.notes?`  · ${ctx.raw.notes}`:""}`}},
-      chartBg:chartBgPlugin,
-      quarterLines:quarterLinePlugin,
+      chartBg:{goalVal:chart?.goalValue ?? 100},
+      quarterLines:{quarters},
       zoom:{
         pan:{enabled:true,mode:"x"},
         zoom:{wheel:{enabled:true},pinch:{enabled:true},drag:{enabled:false},mode:"x"},
@@ -1596,7 +1603,7 @@ function ReportModal({show,onClose,sets,selSet,onPrint,chart,onParentPrint}){
           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
             <button className="action-btn" onClick={onPrint} style={{background:"var(--teal)",color:"#fff"}}>🖨 Print</button>
             {chart&&(
-              <button className="action-btn" onClick={onParentPrint} title={`Print just "${chart.name ?? "this goal"}" — chart + quarterly averages`} style={{background:"#4e9af1",color:"#fff"}}>👪 Parent Print</button>
+              <button className="action-btn" onClick={onParentPrint} title={`Print all of ${student.name}'s goals — numbers, notes, and quarterly averages (chart image included for "${chart.name ?? "the open goal"}")`} style={{background:"#4e9af1",color:"#fff"}}>👪 Parent Print</button>
             )}
             <button className="ghost-btn" onClick={onClose}>✕</button>
           </div>
@@ -2009,15 +2016,9 @@ export default function App(){
     const goalMarkup = (student.charts ?? []).map((c) => {
       const pts = c.data ?? [];
       const latest = pts[pts.length - 1];
-      const goalPct = latest && c.goalValue ? Math.round((latest.y / c.goalValue) * 100) : null;
       return `
         <section class="goal-block">
           <div class="goal-header"><span>${(c.name ?? "Goal").replace(/[&<>\"']/g, s => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[s]))}</span><span class="goal-value">${latest ? `${latest.y}%` : "—"}</span></div>
-          <div class="mini-grid">
-            <div class="mini-box"><div class="mini-label">Baseline</div><div class="mini-number">${c.startValue ?? 0}%</div></div>
-            <div class="mini-box"><div class="mini-label">Goal</div><div class="mini-number">${c.goalValue ?? 0}%</div></div>
-            <div class="mini-box"><div class="mini-label">Progress to Goal</div><div class="mini-number">${goalPct != null ? `${goalPct}%` : "—"}</div></div>
-          </div>
           ${(latest && latest.notes) ? `<div class="goal-note">Session note: ${latest.notes}</div>` : ""}
           ${(c.notes) ? `<div class="goal-note goal-notes-block">Goal notes: ${c.notes}</div>` : ""}
           ${buildQuartersMarkup(c)}
@@ -2037,8 +2038,8 @@ export default function App(){
       </div>
     `;
   };
-  const printHtmlDocument=(contentHtml,title)=>{
-    const printHtml = `<!doctype html><html><head><meta charset="utf-8" /><title>${title}</title><style>@page{size:A4 portrait;margin:0.6in;}body{margin:0;background:#fff;color:#2d2d3a;font-family:"Segoe UI",Arial,sans-serif;line-height:1.4}.report-page{break-before:page;page-break-before:always}.report-page:first-child{break-before:auto;page-break-before:auto}.report{width:100%;max-width:100%;box-sizing:border-box}.report-header{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #e5dfd5;padding-bottom:10px;margin-bottom:18px}.report-name{font-size:20px;font-weight:900;color:#2d2d3a}.report-meta{font-size:12px;color:#6b6b7d;margin-top:2px}.badge{width:18px;height:18px;border-radius:6px;background:linear-gradient(135deg,#ff6b6b 0 16.66%,#ffd166 16.66% 33.32%,#52c97a 33.32% 49.98%,#4e9af1 49.98% 66.64%,#a78bfa 66.64% 83.3%,#ff9f6b 83.3% 100%);display:inline-block}.section{border:1px solid #e7e1d8;border-radius:12px;background:#fff;padding:14px 16px;margin-bottom:18px;box-sizing:border-box;page-break-inside:avoid;break-inside:avoid}.section-title{font-size:15px;font-weight:800;margin-bottom:10px}.mini-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:10px}.mini-box{border:1px solid #e7e1d8;border-radius:8px;padding:10px 12px;background:#faf7f3;min-height:72px}.mini-label{font-size:10px;color:#7d7d8f;letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px}.mini-number{font-size:20px;font-weight:800;line-height:1.2}.goal-header{display:flex;justify-content:space-between;align-items:center;font-weight:800;font-size:16px;margin-bottom:8px}.goal-value{color:#ff6b6b}.goal-note{margin-top:10px;font-size:12px;color:#4d4d5f;background:#fffaf0;border:1px solid #f8dd9a;border-radius:8px;padding:8px 10px}.goal-notes-block{background:#fff7f0;border-color:#f9c7a5}.quarter-summary{margin-top:10px;border:1px solid #ded8fa;border-radius:8px;padding:8px 10px;background:#f6f4ff}.quarter-summary-title{font-size:11px;font-weight:800;color:#5b4bc4;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}.quarter-row{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:#3f3a5c;padding:3px 0;border-bottom:1px dashed #e2ddf7}.quarter-row:last-child{border-bottom:none}.quarter-avg{font-weight:800;color:#5b4bc4}.acc-item{padding:4px 0;border-bottom:1px dashed #ece5dc;font-size:13px}.acc-item:last-child{border-bottom:none}.empty{font-size:13px;color:#77778d}.minutes-summary{font-size:13px;color:#4d4d5f;margin-top:8px}.footer{margin-top:20px;display:flex;justify-content:space-between;align-items:center;font-size:11px;color:#7d7d8f;border-top:1px solid #ece5dc;padding-top:10px}</style></head><body>${contentHtml}</body></html>`;
+  const printHtmlDocument=(contentHtml,title,onDone)=>{
+    const printHtml = `<!doctype html><html><head><meta charset="utf-8" /><title>${title}</title><style>@page{size:A4 portrait;margin:0.6in;}body{margin:0;background:#fff;color:#2d2d3a;font-family:"Segoe UI",Arial,sans-serif;line-height:1.4}.report-page{break-before:page;page-break-before:always}.report-page:first-child{break-before:auto;page-break-before:auto}.report{width:100%;max-width:100%;box-sizing:border-box}.report-header{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #e5dfd5;padding-bottom:10px;margin-bottom:18px}.report-name{font-size:20px;font-weight:900;color:#2d2d3a}.report-meta{font-size:12px;color:#6b6b7d;margin-top:2px}.badge{width:18px;height:18px;border-radius:6px;background:linear-gradient(135deg,#ff6b6b 0 16.66%,#ffd166 16.66% 33.32%,#52c97a 33.32% 49.98%,#4e9af1 49.98% 66.64%,#a78bfa 66.64% 83.3%,#ff9f6b 83.3% 100%);display:inline-block}.section{border:1px solid #e7e1d8;border-radius:12px;background:#fff;padding:14px 16px;margin-bottom:18px;box-sizing:border-box;page-break-inside:avoid;break-inside:avoid}.goal-block{page-break-inside:avoid;break-inside:avoid}.section-title{font-size:15px;font-weight:800;margin-bottom:10px}.mini-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:10px}.mini-box{border:1px solid #e7e1d8;border-radius:8px;padding:10px 12px;background:#faf7f3;min-height:72px}.mini-label{font-size:10px;color:#7d7d8f;letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px}.mini-number{font-size:20px;font-weight:800;line-height:1.2}.goal-header{display:flex;justify-content:space-between;align-items:center;font-weight:800;font-size:16px;margin-bottom:8px}.goal-value{color:#ff6b6b}.goal-note{margin-top:10px;font-size:12px;color:#4d4d5f;background:#fffaf0;border:1px solid #f8dd9a;border-radius:8px;padding:8px 10px}.goal-notes-block{background:#fff7f0;border-color:#f9c7a5}.quarter-summary{margin-top:10px;border:1px solid #ded8fa;border-radius:8px;padding:8px 10px;background:#f6f4ff}.quarter-summary-title{font-size:11px;font-weight:800;color:#5b4bc4;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}.quarter-row{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:#3f3a5c;padding:3px 0;border-bottom:1px dashed #e2ddf7}.quarter-row:last-child{border-bottom:none}.quarter-avg{font-weight:800;color:#5b4bc4}.acc-item{padding:4px 0;border-bottom:1px dashed #ece5dc;font-size:13px}.acc-item:last-child{border-bottom:none}.empty{font-size:13px;color:#77778d}.minutes-summary{font-size:13px;color:#4d4d5f;margin-top:8px}.footer{margin-top:20px;display:flex;justify-content:space-between;align-items:center;font-size:11px;color:#7d7d8f;border-top:1px solid #ece5dc;padding-top:10px}</style></head><body>${contentHtml}</body></html>`;
     const iframe = document.createElement("iframe");
     iframe.setAttribute("title", title);
     iframe.style.position = "fixed";
@@ -2049,54 +2050,188 @@ export default function App(){
     iframe.style.pointerEvents = "none";
     iframe.srcdoc = printHtml;
     document.body.appendChild(iframe);
+    let cleaned = false;
+    const cleanup = () => {
+      if (cleaned) return;
+      cleaned = true;
+      iframe.remove();
+      onDone?.();
+    };
     iframe.onload = () => {
       try {
+        iframe.contentWindow?.addEventListener("afterprint", cleanup);
         iframe.contentWindow?.focus();
         iframe.contentWindow?.print();
       } catch (error) {
         console.error("Failed to print report", error);
+        cleanup();
       }
-      setTimeout(() => iframe.remove(), 1000);
+      // Fallback in case afterprint never fires (some browsers on a cancelled/failed dialog).
+      setTimeout(cleanup, 4000);
     };
   };
-  // "Parent Print" — a short, single-goal handout for the currently selected goal: just the
-  // goal's headline numbers, a snapshot image of its chart (pulled straight off the live
-  // Chart.js canvas so it matches exactly what's on screen, quarter lines and all), and the
-  // quarterly averages log. No minutes, accommodations, or other goals included.
-  const printGoalReport = () => {
-    if (!chart) return;
+  // Renders a static snapshot of a goal's chart on a detached, off-screen canvas — used so every
+  // goal in Parent Print gets an actual chart image, not just whichever one happens to be open in
+  // the Goals tab (the only one with a live, on-screen Chart.js canvas to grab a frame from).
+  const renderGoalChartImage = (goal, pal) => new Promise(resolve => {
+    try {
+      const pts = goal?.data ?? [];
+      if (!pts.length) { resolve(null); return; }
+
+      const parseD = value => {
+        if (!value || typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+        const d = new Date(`${value}T12:00:00`);
+        return Number.isNaN(d.getTime()) ? null : d;
+      };
+      const startChartDate = parseD(goal.startDate);
+      const goalChartDate = parseD(goal.goalDate);
+      const hasValidTargetDates = Boolean(startChartDate && goalChartDate && startChartDate.getTime() <= goalChartDate.getTime());
+      const goalVal = goal.goalValue ?? 100;
+      const quarters = Array.isArray(goal.quarters) ? goal.quarters : [];
+
+      const canvas = document.createElement("canvas");
+      canvas.width = 900; canvas.height = 340;
+      canvas.style.position = "fixed";
+      canvas.style.left = "-9999px";
+      canvas.style.top = "0";
+      document.body.appendChild(canvas);
+
+      const bgPlugin = {
+        id: "chartBgStatic",
+        beforeDraw(ch) {
+          const { ctx, chartArea: { top, bottom, left, right }, scales: { y } } = ch;
+          if (!y) return;
+          const zones = [
+            { from: goalVal, to: 100, color: "rgba(82,201,122,0.08)" },
+            { from: goalVal * 0.7, to: goalVal, color: "rgba(255,209,102,0.08)" },
+            { from: 0, to: goalVal * 0.7, color: "rgba(255,107,107,0.06)" },
+          ];
+          zones.forEach(({ from, to, color }) => {
+            const yTop = y.getPixelForValue(Math.min(to, 100));
+            const yBot = y.getPixelForValue(Math.max(from, 0));
+            ctx.fillStyle = color;
+            ctx.fillRect(left, yTop, right - left, yBot - yTop);
+          });
+        },
+      };
+      const qLinePlugin = {
+        id: "quarterLinesStatic",
+        afterDraw(ch) {
+          const { ctx, chartArea, scales } = ch;
+          const x = scales.x;
+          if (!x || !chartArea) return;
+          const { top, bottom, left, right } = chartArea;
+          quarters.forEach(q => {
+            const qDate = parseD(q.date);
+            if (!qDate) return;
+            const px = x.getPixelForValue(qDate.getTime());
+            if (!Number.isFinite(px) || px < left || px > right) return;
+            ctx.save();
+            ctx.beginPath();
+            ctx.moveTo(px, top);
+            ctx.lineTo(px, bottom);
+            ctx.strokeStyle = "#7c6cf0";
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            ctx.restore();
+            ctx.save();
+            ctx.fillStyle = "#7c6cf0";
+            ctx.font = "700 11px 'Nunito Sans', sans-serif";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "top";
+            ctx.fillText("🏁", px, top + 3);
+            ctx.restore();
+          });
+        },
+      };
+
+      const chartInstance = new ChartJS(canvas, {
+        type: "line",
+        data: {
+          datasets: [
+            { label: goal.name ?? "Progress", data: pts, borderColor: pal.chip, backgroundColor: pal.chip + "22", tension: 0.35, fill: true, pointRadius: 4, pointBackgroundColor: "#fff", pointBorderColor: pal.chip, pointBorderWidth: 2 },
+            hasValidTargetDates && { label: "🎯 Target", data: [{ x: startChartDate, y: goal.startValue }, { x: goalChartDate, y: goal.goalValue }], borderColor: "#52c97a", borderDash: [6, 4], borderWidth: 2, fill: false, pointRadius: 4, pointBackgroundColor: "#52c97a" },
+          ].filter(Boolean),
+        },
+        options: {
+          responsive: false,
+          animation: false,
+          devicePixelRatio: 2,
+          plugins: {
+            legend: { labels: { color: "#5a5a72", font: { family: "'Nunito',sans-serif", size: 12, weight: "700" }, boxWidth: 14, padding: 16 } },
+            tooltip: { enabled: false },
+          },
+          scales: {
+            x: { type: "time", time: { unit: "day", tooltipFormat: "MMM d, yyyy" }, grid: { color: "rgba(0,0,0,0.04)" }, ticks: { color: "#9898b0", font: { family: "'Nunito Sans'", size: 11 } } },
+            y: { min: 0, max: 100, grid: { color: "rgba(0,0,0,0.04)" }, ticks: { color: "#9898b0", font: { family: "'Nunito'", size: 11 }, callback: v => v + "%" } },
+          },
+        },
+        plugins: [bgPlugin, qLinePlugin],
+      });
+
+      // With animation disabled Chart.js draws synchronously during construction, but give it
+      // one frame to be safe before grabbing the image.
+      requestAnimationFrame(() => {
+        const img = chartInstance.toBase64Image("image/png", 1);
+        chartInstance.destroy();
+        canvas.remove();
+        resolve(img);
+      });
+    } catch (error) {
+      console.error("Failed to render chart snapshot", error);
+      resolve(null);
+    }
+  });
+
+  // "Parent Print" — a full handout covering every one of the student's goals: headline numbers,
+  // a chart image, quarterly averages, and notes for each. No minutes or accommodations included.
+  const printGoalReport = async () => {
+    if (!student) return;
     const today = new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
-    const pts = chart.data ?? [];
-    const latest = pts[pts.length - 1];
-    const chartImg = (activeTab === "goals" && typeof chartRef.current?.toBase64Image === "function")
-      ? chartRef.current.toBase64Image("image/png", 1)
-      : null;
+    const charts = student.charts ?? [];
+    if (!charts.length) return;
+    const pal = getPal(selSet);
+
+    const chartImages = await Promise.all(charts.map(g => renderGoalChartImage(g, pal)));
+
+    const goalBlocks = charts.map((g, gi) => {
+      const pts = g.data ?? [];
+      const latest = pts[pts.length - 1];
+      const chartImg = chartImages[gi];
+      return `
+        <section class="goal-block">
+          <div class="goal-header"><span>${escapeHtml(g.name ?? "Goal")}</span><span class="goal-value">${latest ? `${latest.y}%` : "—"}</span></div>
+          <div class="mini-grid">
+            <div class="mini-box"><div class="mini-label">Baseline</div><div class="mini-number">${g.startValue ?? 0}%</div></div>
+            <div class="mini-box"><div class="mini-label">Latest data entry</div><div class="mini-number">${latest ? `${latest.y}%` : "—"}</div></div>
+            <div class="mini-box"><div class="mini-label">Goal</div><div class="mini-number">${g.goalValue ?? 0}%</div></div>
+          </div>
+          ${chartImg
+            ? `<div style="margin-top:16px;border:1px solid #e7e1d8;border-radius:12px;padding:10px;background:#fff"><img src="${chartImg}" style="width:100%;display:block" /></div>`
+            : `<div class="empty" style="margin-top:12px">No data points yet to chart.</div>`}
+          ${(g.notes) ? `<div class="goal-note goal-notes-block">Goal notes: ${escapeHtml(g.notes)}</div>` : ""}
+          ${buildQuartersMarkup(g)}
+        </section>
+      `;
+    }).join("");
 
     const html = `
       <div class="report-page">
         <div class="report">
           <div class="report-header">
             <div>
-              <div class="report-name">${escapeHtml(student?.name ?? "")} — ${escapeHtml(chart.name ?? "Goal")}</div>
+              <div class="report-name">${escapeHtml(student?.name ?? "")}</div>
               <div class="report-meta">Parent Copy · Generated ${today}</div>
             </div>
             <span class="badge"></span>
           </div>
-          <div class="mini-grid">
-            <div class="mini-box"><div class="mini-label">Baseline</div><div class="mini-number">${chart.startValue ?? 0}%</div></div>
-            <div class="mini-box"><div class="mini-label">Current</div><div class="mini-number">${latest ? `${latest.y}%` : "—"}</div></div>
-            <div class="mini-box"><div class="mini-label">Goal</div><div class="mini-number">${chart.goalValue ?? 0}%</div></div>
-          </div>
-          ${chartImg
-            ? `<div style="margin-top:16px;border:1px solid #e7e1d8;border-radius:12px;padding:10px;background:#fff;page-break-inside:avoid;break-inside:avoid"><img src="${chartImg}" style="width:100%;display:block" /></div>`
-            : `<div class="empty" style="margin-top:12px">Open the Goals tab to include a copy of the chart next time.</div>`}
-          ${buildQuartersMarkup(chart)}
+          ${goalBlocks}
           <div class="footer"><span>Progress Monitor · Parent Copy</span><span>${today}</span></div>
         </div>
       </div>
     `;
 
-    printHtmlDocument(html, `Parent Report - ${student?.name ?? ""} - ${chart.name ?? "Goal"}`);
+    printHtmlDocument(html, `Parent Report - ${student?.name ?? ""}`);
   };
 
   // Act on whichever attachment pool is currently active — the selected goal's own files, or
@@ -2123,23 +2258,29 @@ export default function App(){
   const printAllAttachments = () => {
     const atts = activeAttachments;
     if (!atts.length) return;
-    const pages = atts.map(f => {
+    // Fire one print job per file, one after another — each attachment gets its own print
+    // dialog/page setup instead of being merged into a single multi-page document.
+    let i = 0;
+    const printNext = () => {
+      if (i >= atts.length) return;
+      const f = atts[i]; i += 1;
       const type = f.type || "";
       const body = type.startsWith("image/")
         ? `<img src="data:${type};base64,${f.content}" style="max-width:100%;max-height:9in;display:block;margin:0 auto;border-radius:8px" />`
         : type === "application/pdf"
           ? `<embed src="data:application/pdf;base64,${f.content}" type="application/pdf" style="width:100%;height:9.5in;border:1px solid #e7e1d8;border-radius:8px" />`
           : `<div style="text-align:center;padding:70px 20px;color:#77778d;border:1.5px dashed #e7e1d8;border-radius:12px"><div style="font-size:44px;margin-bottom:10px">📄</div><div style="font-weight:700;font-size:15px;color:#2d2d3a">${escapeHtml(f.name)}</div><div style="font-size:12px;margin-top:6px">${escapeHtml(type || "Unknown type")} · ${Math.round((f.size||0)/1024)}KB</div><div style="font-size:12px;margin-top:12px">This file type can't be previewed for printing — use "Download All" to save it instead.</div></div>`;
-      return `
+      const page = `
         <div class="report-page">
           <div class="report">
-            <div class="report-header"><div><div class="report-name">${escapeHtml(f.name)}</div><div class="report-meta">${escapeHtml(student?.name ?? "")} · Attachment</div></div><span class="badge"></span></div>
+            <div class="report-header"><div><div class="report-name">${escapeHtml(f.name)}</div><div class="report-meta">${escapeHtml(student?.name ?? "")} · Attachment ${i} of ${atts.length}</div></div><span class="badge"></span></div>
             ${body}
           </div>
         </div>
       `;
-    }).join("");
-    printHtmlDocument(pages, `Attachments - ${student?.name ?? ""}`);
+      printHtmlDocument(page, f.name, printNext);
+    };
+    printNext();
   };
   const printStudentReport = () => {
     const student = sets[selSet];
@@ -2157,17 +2298,11 @@ export default function App(){
     const goalMarkup = (student.charts ?? []).map((c) => {
       const pts = c.data ?? [];
       const latest = pts[pts.length - 1];
-      const goalPct = latest && c.goalValue ? Math.round((latest.y / c.goalValue) * 100) : null;
       return `
         <section class="goal-block">
           <div class="goal-header">
             <span>${(c.name ?? "Goal").replace(/[&<>"']/g, s => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[s]))}</span>
             <span class="goal-value">${latest ? `${latest.y}%` : "—"}</span>
-          </div>
-          <div class="mini-grid">
-            <div class="mini-box"><div class="mini-label">Baseline</div><div class="mini-number">${c.startValue ?? 0}%</div></div>
-            <div class="mini-box"><div class="mini-label">Goal</div><div class="mini-number">${c.goalValue ?? 0}%</div></div>
-            <div class="mini-box"><div class="mini-label">Progress to Goal</div><div class="mini-number">${goalPct != null ? `${goalPct}%` : "—"}</div></div>
           </div>
           ${(latest && latest.notes) ? `<div class="goal-note">Session note: ${latest.notes}</div>` : ""}
           ${(c.notes) ? `<div class="goal-note goal-notes-block">Goal notes: ${c.notes}</div>` : ""}
@@ -2229,6 +2364,10 @@ export default function App(){
             padding: 14px 16px;
             margin-bottom: 18px;
             box-sizing: border-box;
+            page-break-inside: avoid;
+            break-inside: avoid;
+          }
+          .goal-block {
             page-break-inside: avoid;
             break-inside: avoid;
           }
