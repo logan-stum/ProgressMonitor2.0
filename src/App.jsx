@@ -163,6 +163,21 @@ const normalizeStudentAttachments = student => {
 };
 const currentYear = () => new Date().getFullYear();
 
+// URL hash acts as this app's "router" so the dashboard and a student's page are addressable as
+// separate URLs — refreshing on a student page reloads back into that same page instead of
+// bouncing to the dashboard, and the browser back/forward buttons move between the two.
+// Format: "#/student/<studentIndex>/<tab>/<goalIndex>" or "#/dashboard".
+const parseLocationHash = () => {
+  const raw = window.location.hash.replace(/^#\/?/, "");
+  const parts = raw.split("/").filter(Boolean);
+  if (parts[0] === "student") {
+    return { view: "student", selSet: Number(parts[1]) || 0, activeTab: parts[2] || "goals", selChart: Number(parts[3]) || 0 };
+  }
+  return { view: "dashboard", selSet: 0, activeTab: "goals", selChart: 0 };
+};
+const buildLocationHash = (view, selSet, activeTab, selChart) =>
+  view === "student" ? `#/student/${selSet}/${activeTab}/${selChart}` : "#/dashboard";
+
 function burst(x,y,big=false) {
   const colors=["#ff6b6b","#26c6b0","#ffd166","#4e9af1","#a78bfa","#52c97a"];
   const n = big ? 30 : 12;
@@ -1867,11 +1882,37 @@ export default function App(){
     },
   };
   const theme = dashboardThemes[themeKey] ?? dashboardThemes.sunrise;
-  const [view,setView]=useState("dashboard"); // "dashboard" | "student"
-  const [selSet,setSelSet]=useState(0);
-  const [selChart,setSelChart]=useState(0);
-  const [activeTab,setActiveTab]=useState("goals");
+  const initialRoute = parseLocationHash();
+  const [view,setView]=useState(initialRoute.view); // "dashboard" | "student"
+  const [selSet,setSelSet]=useState(()=>Math.min(Math.max(initialRoute.selSet,0), Math.max(sets.length-1,0)));
+  const [selChart,setSelChart]=useState(initialRoute.selChart);
+  const [activeTab,setActiveTab]=useState(initialRoute.activeTab);
   const [history,setHistory]=useState([]);
+
+  // Keep the URL hash in sync with navigation, and respond to back/forward.
+  // Every navigation-relevant change — dashboard <-> student, switching students, switching tabs
+  // (Goals/Accommodations/Minutes), or switching goals — pushes a new history entry, so the back
+  // button retraces each step (goal 2 -> back -> goal 1, accommodations -> back -> goals, etc).
+  const isPoppingRef = useRef(false);
+  useEffect(() => {
+    const onPop = () => {
+      const r = parseLocationHash();
+      isPoppingRef.current = true;
+      setView(r.view);
+      setSelSet(v => Math.min(Math.max(r.selSet,0), Math.max(sets.length-1,0)));
+      setActiveTab(r.activeTab);
+      setSelChart(r.selChart);
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [sets.length]);
+  useEffect(() => {
+    if (isPoppingRef.current) { isPoppingRef.current = false; return; }
+    const hash = buildLocationHash(view, selSet, activeTab, selChart);
+    if (window.location.hash === hash) return;
+    window.history.pushState(null, "", hash);
+  }, [view, selSet, activeTab, selChart]);
+
   const [editPt,setEditPt]=useState(null);
   const [showAtt,setShowAtt]=useState(false);
   const [showAS,setShowAS]=useState(false);
