@@ -141,6 +141,26 @@ const getStudentEmoji = student => student?.emoji?.trim() || getEmoji(student?.n
 const clamp    = (v,lo,hi) => Math.max(lo,Math.min(hi,v));
 const sanitize = arr => (Array.isArray(arr)?arr:[]).map(p=>({...p,y:clamp(Number(p.y),0,100)})).sort((a,b)=>new Date(a.x)-new Date(b.x));
 const todayStr = () => new Date().toISOString().split("T")[0];
+// Attachments are scoped per-goal (chart.attachments) and the Accommodations tab has its own
+// separate pool (student.accommodationAttachments) — a file uploaded to one goal, or to
+// Accommodations, doesn't show up anywhere else.
+// A prior version of this app pooled every goal's attachments into one shared, student-level
+// list (student.attachments). This normalizer runs once per load: it makes sure every chart has
+// its own `attachments` array, and — since a merged pool has no way to tell which goal a given
+// file used to belong to — moves any leftover shared pool onto the Accommodations tab rather
+// than silently dropping it, so nothing already-uploaded disappears.
+const normalizeStudentAttachments = student => {
+  const charts = Array.isArray(student.charts) ? student.charts : [];
+  const { attachments: legacySharedPool, ...rest } = student;
+  return {
+    ...rest,
+    accommodationAttachments: [
+      ...(Array.isArray(student.accommodationAttachments) ? student.accommodationAttachments : []),
+      ...(Array.isArray(legacySharedPool) ? legacySharedPool : []),
+    ],
+    charts: charts.map(c => ({ ...c, attachments: Array.isArray(c.attachments) ? c.attachments : [] })),
+  };
+};
 const currentYear = () => new Date().getFullYear();
 
 function burst(x,y,big=false) {
@@ -793,7 +813,7 @@ function Dashboard({
 }
 
 // ─── Goals Tab ────────────────────────────────────────────────────────────────
-function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAtt,setShowAtt,setShowAG,chartRef,editPt,setEditPt,theme}){
+function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAtt,setShowAtt,setShowAG,chartRef,editPt,setEditPt,theme,requestConfirm}){
   const student=sets[selSet];
   const chart=student?.charts?.[selChart]??null;
   const pal=getPal(selSet);
@@ -804,6 +824,13 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
   const [dateDrafts,setDateDrafts]=useState({ startDate: "", goalDate: "" });
   const [viewYear,setViewYear]=useState(currentYear);
   const [showQL,setShowQL]=useState(false); // quick log modal
+  const [editingQuarterId,setEditingQuarterId]=useState(null);
+  const [editingQuarterVal,setEditingQuarterVal]=useState("");
+  const [editingQuarterName,setEditingQuarterName]=useState("");
+  const [quarterLogCollapsed,setQuarterLogCollapsed]=useState(false);
+  const [flagPositions,setFlagPositions]=useState([]);
+  const [hoveredFlagId,setHoveredFlagId]=useState(null);
+  const flagPositionsRef=useRef([]);
 
   const normalizeDateDigits = value => String(value ?? "").replace(/\D/g, "").slice(0, 8);
   const formatDateDraft = value => {
@@ -913,13 +940,93 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
     setPointToDelete(null);
   };
 
-  // Chart zones plugin (green/yellow/red bands)
-  const goalVal = chart?.goalValue ?? 100;
+  // ─── Quarter markers ────────────────────────────────────────────────────
+  // A "quarter" is a snapshot: the date it was marked, plus the average of every data
+  // point since the previous quarter marker (or the beginning of the data, if this is the
+  // first one) through that date. Averages can be hand-edited later; the underlying data
+  // points are never modified.
+  const quarters = Array.isArray(chart?.quarters) ? chart.quarters : [];
+  const quartersSorted = quarters.slice().sort((a, b) => a.date.localeCompare(b.date));
+
+  // Force an immediate canvas redraw whenever the quarter markers actually change content
+  // (added, edited, or deleted) — otherwise the vertical line/flag can lag a render behind
+  // and only appear after something else forces the chart to re-render (e.g. a page refresh).
+  const quartersSignature = JSON.stringify(quarters);
+  useEffect(() => {
+    chartRef.current?.update();
+  }, [quartersSignature]);
+
+
+  const handleEndQuarter = () => {
+    if (!chart) return;
+    const today = todayStr();
+
+    if (quartersSorted.some(q => q.date === today)) {
+      alert("A quarter is already marked for today. Delete it first if you\'d like to re-mark today.");
+      return;
+    }
+
+    const prevDate = quartersSorted.length ? quartersSorted[quartersSorted.length - 1].date : null;
+    const matched = allPts.filter(p => (!prevDate || p.x > prevDate) && p.x <= today);
+    const avg = matched.length
+      ? Math.round((matched.reduce((sum, p) => sum + Number(p.y), 0) / matched.length) * 10) / 10
+      : null;
+
+    snap();
+    upd(d => {
+      const c = d[selSet].charts[selChart];
+      if (!Array.isArray(c.quarters)) c.quarters = [];
+
+      c.quarters.push({
+        id: `q_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        date: today,
+        name: `Quarter ${quartersSorted.length + 1}`,
+        avg,
+        count: matched.length
+      });
+    });
+  };
+
+  const startEditQuarter = q => { setEditingQuarterId(q.id); setEditingQuarterVal(q.avg ?? ""); setEditingQuarterName(q.name ?? ""); };
+  const cancelEditQuarter = () => { setEditingQuarterId(null); setEditingQuarterVal(""); setEditingQuarterName(""); };
+  const saveEditQuarter = id => {
+    const parsed = clamp(Number(editingQuarterVal), 0, 100);
+    if (Number.isNaN(parsed)) { cancelEditQuarter(); return; }
+    const nextName = editingQuarterName.trim();
+    snap();
+    upd(d => {
+      const c = d[selSet].charts[selChart];
+      c.quarters = (c.quarters ?? []).map(q => q.id === id ? { ...q, avg: parsed, name: nextName || q.name, manual: true } : q);
+    });
+    cancelEditQuarter();
+  };
+  const deleteQuarter = q => {
+    requestConfirm({
+      title: "Delete quarter marker?",
+      message: `This will remove the ${q.date} quarter line and its average from this goal.`,
+      confirmLabel: "Delete",
+      danger: true,
+      onConfirm: () => {
+        snap();
+        upd(d => {
+          const c = d[selSet].charts[selChart];
+          c.quarters = (c.quarters ?? []).filter(x => x.id !== q.id);
+        });
+      },
+    });
+  };
+
+  // Chart zones plugin (green/yellow/red bands). Dynamic values (goalVal) are read from
+  // pluginOptions (chart.options.plugins.chartBg below) rather than closed over directly —
+  // react-chartjs-2 refreshes chart.options on every render but does NOT re-register the
+  // `plugins` array on updates, so a value captured via closure here would stay frozen at
+  // whatever it was when the chart first mounted, only catching up on a full page refresh.
   const chartBgPlugin = {
     id: "chartBg",
-    beforeDraw(ch) {
+    beforeDraw(ch, args, pluginOptions) {
       const { ctx, chartArea:{ top, bottom, left, right }, scales:{ y } } = ch;
       if (!y) return;
+      const goalVal = pluginOptions?.goalVal ?? 100;
       const zones = [
         { from: goalVal,        to: 100,       color: "rgba(82,201,122,0.08)" },
         { from: goalVal * 0.7,  to: goalVal,   color: "rgba(255,209,102,0.08)" },
@@ -940,6 +1047,72 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
     const parsed = new Date(`${value}T12:00:00`);
     if (Number.isNaN(parsed.getTime())) return null;
     return parsed;
+  };
+
+  // Draws a vertical quarter-end line from the very top to the very bottom
+  // of the chart plotting area. The line follows zoom/pan because its x pixel
+  // position is calculated from the currently visible time scale.
+  // Same as chartBgPlugin above: `quarters` comes from pluginOptions (chart.options.plugins.
+  // quarterLines) so marking/deleting a quarter shows up on next draw, not just after a refresh.
+  const quarterLinePlugin = {
+    id: "quarterLines",
+    afterDraw(ch, args, pluginOptions) {
+      const { ctx, chartArea, scales } = ch;
+      const x = scales.x;
+
+      if (!x || !chartArea) return;
+
+      const { top, bottom, left, right } = chartArea;
+      const nextFlagPositions = [];
+      const quartersForDraw = pluginOptions?.quarters ?? [];
+
+      quartersForDraw.forEach(q => {
+        const qDate = parseChartDate(q.date);
+        if (!qDate) return;
+
+        const px = x.getPixelForValue(qDate.getTime());
+
+        // Do not draw the line if this quarter is outside the visible chart.
+        if (!Number.isFinite(px) || px < left || px > right) return;
+
+        ctx.save();
+
+        ctx.beginPath();
+        ctx.moveTo(px, top);
+        ctx.lineTo(px, bottom);
+        ctx.strokeStyle = "#7c6cf0";
+        ctx.lineWidth = 2;
+        ctx.setLineDash([]);
+        ctx.stroke();
+
+        ctx.restore();
+
+        // Small quarter flag at the top of the line.
+        ctx.save();
+        ctx.fillStyle = "#7c6cf0";
+        ctx.font = "700 11px 'Nunito Sans', sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "top";
+        ctx.fillText("🏁", px, top + 3);
+        ctx.restore();
+
+        // Record where the flag landed so a hoverable overlay can be positioned on top
+        // of the canvas (canvas-drawn text can't natively receive hover events).
+        nextFlagPositions.push({ id: q.id, x: px, y: top + 3, name: q.name || q.date, date: q.date, avg: q.avg });
+      });
+
+      // Only trigger a React re-render when positions actually changed (e.g. after zoom/pan/resize),
+      // to avoid looping: setState -> re-render -> chart redraw -> afterDraw -> setState...
+      const prev = flagPositionsRef.current;
+      const changed = prev.length !== nextFlagPositions.length || nextFlagPositions.some((p, i) => {
+        const o = prev[i];
+        return !o || o.id !== p.id || Math.round(o.x) !== Math.round(p.x) || Math.round(o.y) !== Math.round(p.y) || o.name !== p.name;
+      });
+      if (changed) {
+        flagPositionsRef.current = nextFlagPositions;
+        setFlagPositions(nextFlagPositions);
+      }
+    },
   };
 
   const startChartDate = parseChartDate(chart?.startDate);
@@ -985,7 +1158,8 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
       tooltip:{backgroundColor:"#2d2d3a",titleColor:"#fff",bodyColor:"#9898b0",padding:12,cornerRadius:10,
         titleFont:{family:"'Nunito',sans-serif",weight:"800"},bodyFont:{family:"'Nunito Sans',sans-serif",size:12},
         callbacks:{label:ctx=>` ${ctx.parsed.y}%${ctx.raw?.notes?`  · ${ctx.raw.notes}`:""}`}},
-      chartBg:chartBgPlugin,
+      chartBg:{goalVal:chart?.goalValue ?? 100},
+      quarterLines:{quarters},
       zoom:{
         pan:{enabled:true,mode:"x"},
         zoom:{wheel:{enabled:true},pinch:{enabled:true},drag:{enabled:false},mode:"x"},
@@ -1050,27 +1224,111 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
         </div>
       )}
 
-      <div style={{background:theme.card,borderRadius:"var(--r-lg)",border:`2px solid ${theme.border}`,padding:"16px",boxShadow:`0 8px 20px ${theme.shadow}`}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,gap:10}}>
-          <div style={{fontFamily:"var(--font-head)",fontWeight:800,fontSize:14,color:theme.text}}>Progress Chart — {viewYear}</div>
-          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-            <div style={{fontSize:11,color:"var(--ink-soft)"}}>Click a point to select it · filled dot = has note · scroll/pinch to zoom · drag to pan</div>
-            <button className="ghost-btn" onClick={()=>chartRef.current?.resetZoom()} style={{padding:"4px 10px",fontSize:11}}>Reset zoom</button>
-            {selectedPointIndex!==null&&(
-              <button className="ghost-btn" onClick={()=>setPointToDelete(selectedPointIndex)} style={{padding:"4px 10px",fontSize:11,color:"var(--red)"}}>Delete selected</button>
-            )}
+      <div style={{display:"flex",gap:16,alignItems:"flex-start"}}>
+        <div style={{flex:"1 1 0",minWidth:0,background:theme.card,borderRadius:"var(--r-lg)",border:`2px solid ${theme.border}`,padding:"16px",boxShadow:`0 8px 20px ${theme.shadow}`,transition:"flex-basis .2s ease"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,gap:10,flexWrap:"wrap"}}>
+            <div style={{fontFamily:"var(--font-head)",fontWeight:800,fontSize:14,color:theme.text}}>Progress Chart — {viewYear}</div>
+            <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+              <div style={{fontSize:11,color:"var(--ink-soft)"}}>Click a point to select it · filled dot = has note · scroll/pinch to zoom · drag to pan</div>
+              <button className="ghost-btn" onClick={()=>chartRef.current?.resetZoom()} style={{padding:"4px 10px",fontSize:11}}>Reset zoom</button>
+              {selectedPointIndex!==null&&(
+                <button className="ghost-btn" onClick={()=>setPointToDelete(selectedPointIndex)} style={{padding:"4px 10px",fontSize:11,color:"var(--red)"}}>Delete selected</button>
+              )}
+              <button className="action-btn" onClick={handleEndQuarter} style={{padding:"4px 12px",fontSize:11,background:"#7c6cf0",color:"#fff"}} title="Mark today as the end of a quarter and average all entries since the last quarter line">🏁 End Quarter</button>
+            </div>
+          </div>
+          <div style={{height:240,position:"relative"}}>
+            <Line ref={chartRef} data={chartData} options={chartOpts} plugins={[chartBgPlugin, quarterLinePlugin]}/>
+            {/* Hoverable overlay for each quarter flag — canvas text can't natively receive hover
+                events, so we position a small transparent hit-target on top of each flag using
+                the pixel coordinates the quarterLines plugin records on every draw. */}
+            {flagPositions.map(fp=>(
+              <div
+                key={fp.id}
+                onMouseEnter={()=>setHoveredFlagId(fp.id)}
+                onMouseLeave={()=>setHoveredFlagId(id=>id===fp.id?null:id)}
+                style={{position:"absolute",left:fp.x-9,top:fp.y-2,width:18,height:18,cursor:"help",zIndex:5}}
+              >
+                {hoveredFlagId===fp.id&&(
+                  <div style={{position:"absolute",bottom:22,left:"50%",transform:"translateX(-50%)",background:"#2d2d3a",color:"#fff",padding:"6px 10px",borderRadius:8,fontSize:11,fontFamily:"var(--font-head)",fontWeight:700,whiteSpace:"nowrap",boxShadow:"var(--shadow)",pointerEvents:"none"}}>
+                    {fp.name}
+                    <div style={{fontWeight:500,color:"#9898b0",fontSize:10,marginTop:2}}>{fp.date}{fp.avg!=null?` · ${fp.avg}%`:""}</div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+          <div style={{display:"flex",gap:12,marginTop:8,flexWrap:"wrap"}}>
+            {[{color:"rgba(82,201,122,0.3)",label:"At/above goal"},{color:"rgba(255,209,102,0.3)",label:"Near goal"},{color:"rgba(255,107,107,0.2)",label:"Below goal"}].map(({color,label})=>(
+              <div key={label} style={{display:"flex",alignItems:"center",gap:5,fontSize:11,color:"var(--ink-soft)"}}>
+                <span style={{display:"inline-block",width:12,height:8,borderRadius:2,background:color}}/>{label}
+              </div>
+            ))}
+            <div style={{display:"flex",alignItems:"center",gap:5,fontSize:11,color:"var(--ink-soft)"}}>
+              <span style={{display:"inline-block",width:12,height:8,borderRadius:2,background:"repeating-linear-gradient(90deg,#7c6cf0 0 4px,transparent 4px 8px)"}}/>🏁 Quarter marker — hover a flag for its name
+            </div>
           </div>
         </div>
-        <div style={{height:240}}>
-          <Line ref={chartRef} data={chartData} options={chartOpts} plugins={[chartBgPlugin]}/>
-        </div>
-        <div style={{display:"flex",gap:12,marginTop:8,flexWrap:"wrap"}}>
-          {[{color:"rgba(82,201,122,0.3)",label:"At/above goal"},{color:"rgba(255,209,102,0.3)",label:"Near goal"},{color:"rgba(255,107,107,0.2)",label:"Below goal"}].map(({color,label})=>(
-            <div key={label} style={{display:"flex",alignItems:"center",gap:5,fontSize:11,color:"var(--ink-soft)"}}>
-              <span style={{display:"inline-block",width:12,height:8,borderRadius:2,background:color}}/>{label}
+
+        {quarterLogCollapsed ? (
+          <button
+            onClick={()=>setQuarterLogCollapsed(false)}
+            title="Show quarterly averages"
+            style={{flex:"0 0 34px",width:34,alignSelf:"stretch",minHeight:240,background:theme.card,borderRadius:"var(--r-lg)",border:`2px solid ${theme.border}`,boxShadow:`0 8px 20px ${theme.shadow}`,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:8,padding:"10px 0"}}
+          >
+            <span style={{fontSize:11,color:theme.subtle}}>◂</span>
+            <span style={{writingMode:"vertical-rl",fontFamily:"var(--font-head)",fontWeight:800,fontSize:11,color:theme.text,letterSpacing:"0.04em"}}>Quarterly Averages</span>
+            {quartersSorted.length>0&&(
+              <span style={{fontSize:10,fontWeight:800,color:"#fff",background:pal.chip,borderRadius:999,padding:"2px 6px",minWidth:16,textAlign:"center"}}>{quartersSorted.length}</span>
+            )}
+          </button>
+        ) : (
+          <div style={{flex:"0 0 200px",width:200,minWidth:0,background:theme.card,borderRadius:"var(--r-lg)",border:`2px solid ${theme.border}`,padding:"14px",boxShadow:`0 8px 20px ${theme.shadow}`,alignSelf:"flex-start"}}>
+            <div
+              onClick={()=>setQuarterLogCollapsed(true)}
+              title="Collapse"
+              style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,gap:8,cursor:"pointer",userSelect:"none"}}
+            >
+              <div style={{display:"flex",alignItems:"center",gap:5,minWidth:0}}>
+                <span style={{fontSize:12,color:theme.subtle}}>▸</span>
+                <div style={{fontFamily:"var(--font-head)",fontWeight:800,fontSize:12,color:theme.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>Quarterly Avgs</div>
+              </div>
+              <div style={{fontSize:10,color:"var(--ink-soft)",flexShrink:0}}>{quartersSorted.length}</div>
             </div>
-          ))}
-        </div>
+            {quartersSorted.length===0 ? (
+              <div style={{fontSize:11,color:"var(--ink-soft)"}}>No quarters marked yet. Press "🏁 End Quarter" to log the average since the last line.</div>
+            ) : (
+              <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:280,overflowY:"auto"}}>
+                {quartersSorted.slice().reverse().map(q=>(
+                  <div key={q.id} style={{display:"flex",flexDirection:"column",padding:"7px 9px",borderRadius:8,background:theme.softPanel,border:`1.5px solid ${pal.border}44`,gap:6}}>
+                    {editingQuarterId===q.id ? (
+                      <>
+                        <div><SectionLabel>Quarter name</SectionLabel><input type="text" autoFocus value={editingQuarterName} onChange={e=>setEditingQuarterName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&saveEditQuarter(q.id)} placeholder={q.date} style={{fontSize:12,padding:"6px 8px"}}/></div>
+                        <div><SectionLabel>Percentage</SectionLabel><input type="number" min={0} max={100} value={editingQuarterVal} onChange={e=>setEditingQuarterVal(e.target.value)} onKeyDown={e=>e.key==="Enter"&&saveEditQuarter(q.id)} style={{width:"100%",padding:"6px 8px",fontSize:12}}/></div>
+                        <div style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
+                          <button className="ghost-btn" onClick={()=>saveEditQuarter(q.id)} style={{padding:"3px 8px",fontSize:10}}>Save</button>
+                          <button className="ghost-btn" onClick={cancelEditQuarter} style={{padding:"3px 8px",fontSize:10}}>Cancel</button>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:6}}>
+                          <div style={{fontWeight:700,fontSize:12,color:theme.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}} title={q.name||q.date}>🏁 {q.name || q.date}</div>
+                          <span style={{fontFamily:"var(--font-head)",fontWeight:900,fontSize:14,color:pal.chip,flexShrink:0}}>{q.avg!=null?`${q.avg}%`:"—"}</span>
+                        </div>
+                        <div style={{fontSize:10,color:"var(--ink-soft)"}}>{q.date} · {q.count} {q.count===1?"entry":"entries"}{q.manual?" · edited":""}</div>
+                        <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+                          <button onClick={()=>startEditQuarter(q)} title="Edit name or percentage" style={{background:"none",border:"none",cursor:"pointer",fontSize:12,opacity:.6}}>✏️</button>
+                          <button onClick={()=>deleteQuarter(q)} title="Delete this quarter line and average" style={{background:"none",border:"none",cursor:"pointer",fontSize:12,opacity:.6,color:"var(--red)"}}>🗑️</button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <div style={{background:theme.softPanel,borderRadius:"var(--r-lg)",border:`2px solid ${theme.border}`,padding:"16px",boxShadow:`0 8px 20px ${theme.shadow}`}}>
@@ -1330,7 +1588,7 @@ function MinutesTab({student, selSet, upd, minuteOptions, requestConfirm, theme,
 }
 
 // ─── Report Modal ─────────────────────────────────────────────────────────────
-function ReportModal({show,onClose,sets,selSet,onPrint}){
+function ReportModal({show,onClose,sets,selSet,onPrint,chart,onParentPrint}){
   const student=sets[selSet];
   if(!show||!student) return null;
   const today=new Date().toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"});
@@ -1342,8 +1600,11 @@ function ReportModal({show,onClose,sets,selSet,onPrint}){
       <div onClick={e=>e.stopPropagation()} className="card-appear print-report" style={{background:"var(--paper)",borderRadius:"var(--r-lg)",boxShadow:"var(--shadow-lg)",padding:36,width:"92%",maxWidth:680,maxHeight:"90vh",overflowY:"auto",border:"2px solid var(--border)"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:24}} className="no-print">
           <div style={{fontFamily:"var(--font-head)",fontWeight:800,fontSize:17}}>📄 Progress Report</div>
-          <div style={{display:"flex",gap:8}}>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
             <button className="action-btn" onClick={onPrint} style={{background:"var(--teal)",color:"#fff"}}>🖨 Print</button>
+            {chart&&(
+              <button className="action-btn" onClick={onParentPrint} title={`Print all of ${student.name}'s goals — numbers, notes, and quarterly averages (chart image included for "${chart.name ?? "the open goal"}")`} style={{background:"#4e9af1",color:"#fff"}}>👪 Parent Print</button>
+            )}
             <button className="ghost-btn" onClick={onClose}>✕</button>
           </div>
         </div>
@@ -1411,6 +1672,18 @@ function ReportModal({show,onClose,sets,selSet,onPrint}){
                   </table>
                 )}
                 {c.notes&&<div style={{marginTop:10,fontSize:12,color:"var(--ink-mid)",padding:"8px 10px",background:"var(--yellow-lt)",borderRadius:6,border:"1px solid #ffd16666"}}>📝 {c.notes}</div>}
+                {Array.isArray(c.quarters)&&c.quarters.length>0&&(
+                  <div style={{marginTop:10,padding:"8px 10px",background:"#f6f4ff",borderRadius:8,border:"1px solid #ded8fa"}}>
+                    <div style={{fontSize:11,fontWeight:800,color:"#5b4bc4",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Quarterly Averages</div>
+                    {c.quarters.slice().sort((a,b)=>a.date.localeCompare(b.date)).map(q=>(
+                      <div key={q.id} style={{display:"flex",justifyContent:"space-between",fontSize:12,color:"#3f3a5c",padding:"3px 0",borderBottom:"1px dashed #e2ddf7"}}>
+                        <span>{q.date}</span>
+                        <span style={{color:"var(--ink-soft)"}}>{q.count} {q.count===1?"entry":"entries"}{q.manual?" · edited":""}</span>
+                        <span style={{fontWeight:800,color:"#5b4bc4"}}>{q.avg!=null?`${q.avg}%`:"No data"}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -1441,9 +1714,9 @@ export default function App(){
   const [sets,setSets]=useState(()=>{
     try{
       const s=localStorage.getItem("pm_v2");
-      const parsed = s ? JSON.parse(s) : [{name:"Alex Johnson",collapsed:false,accommodations:[],accDays:{},minutes:[],
+      const parsed = s ? JSON.parse(s) : [{name:"Alex Johnson",collapsed:false,accommodations:[],accDays:{},minutes:[],accommodationAttachments:[],
         charts:[{name:"Reading Fluency",startValue:40,startDate:"",goalValue:90,goalDate:"",data:[],notes:"",attachments:[]}]}];
-      return Array.isArray(parsed) ? parsed.map(student => ({
+      return Array.isArray(parsed) ? parsed.map(student => normalizeStudentAttachments({
         ...student,
         accommodations: Array.isArray(student.accommodations) ? student.accommodations : [],
         accDays: student.accDays ?? {},
@@ -1564,6 +1837,44 @@ export default function App(){
   const pal=getPal(selSet);
   const allStudentIds = sets.map((_, idx) => idx);
 
+  // Attachments are scoped per-goal (chart.attachments), except on the Accommodations tab,
+  // which has its own separate pool (student.accommodationAttachments). Whichever tab is active
+  // decides which pool the Files button/modal reads from and writes to.
+  const attachmentsScope = activeTab === "accommodations" ? "accommodations" : "goal";
+  const activeAttachments = attachmentsScope === "accommodations"
+    ? (student?.accommodationAttachments ?? [])
+    : (chart?.attachments ?? []);
+  const addActiveAttachment = file => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const entry = { name: file.name, type: file.type, size: file.size, content: ev.target.result.split(",")[1] };
+      upd(d => {
+        if (attachmentsScope === "accommodations") {
+          if (!Array.isArray(d[selSet].accommodationAttachments)) d[selSet].accommodationAttachments = [];
+          d[selSet].accommodationAttachments.push(entry);
+        } else {
+          const c = d[selSet].charts[selChart];
+          if (!c) return;
+          if (!Array.isArray(c.attachments)) c.attachments = [];
+          c.attachments.push(entry);
+        }
+      });
+    };
+    reader.readAsDataURL(file);
+  };
+  const removeActiveAttachment = index => {
+    upd(d => {
+      if (attachmentsScope === "accommodations") {
+        d[selSet].accommodationAttachments = (d[selSet].accommodationAttachments ?? []).filter((_, j) => j !== index);
+      } else {
+        const c = d[selSet].charts[selChart];
+        if (!c) return;
+        c.attachments = (c.attachments ?? []).filter((_, j) => j !== index);
+      }
+    });
+  };
+
   const openBulkReport = () => {
     setBulkSelectedStudentIds(allStudentIds);
     setBulkReportOpen(true);
@@ -1616,12 +1927,12 @@ export default function App(){
     if(!newSName.trim()) return;
     const name = newSName.trim();
     const emoji = (newSEmoji.trim() || getStudentEmoji({ name })).slice(0, 2);
-    upd(d => d.push({ name, emoji, groupId: "", collapsed: false, accommodations: [], accDays: {}, minutes: [], charts: [] }));
+    upd(d => d.push({ name, emoji, groupId: "", collapsed: false, accommodations: [], accDays: {}, minutes: [], accommodationAttachments: [], charts: [] }));
     setSelSet(sets.length);setSelChart(0);setActiveTab("goals");setView("student");setNewSName("");setNewSEmoji("");setShowAS(false);
   };
   const addGoal=()=>{
     if(!newGName.trim()) return;
-    upd(d=>d[selSet].charts.push({name:newGName.trim(),startValue:0,startDate:"",goalValue:100,goalDate:"",data:[],notes:"",attachments:[]}));
+    upd(d=>d[selSet].charts.push({name:newGName.trim(),startValue:0,startDate:"",goalValue:100,goalDate:"",data:[],notes:"",quarters:[],attachments:[]}));
     setSelChart(student.charts.length);setNewGName("");setShowAG(false);
   };
   const addGroup=()=>{
@@ -1675,6 +1986,24 @@ export default function App(){
     a.href=URL.createObjectURL(new Blob([JSON.stringify(payload,null,2)],{type:"application/json"}));
     a.download="progress-data.json";a.click();
   };
+  const escapeHtml = s => String(s ?? "").replace(/[&<>"']/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[ch]));
+  const buildQuartersMarkup = (c) => {
+    const qs = Array.isArray(c.quarters) ? c.quarters.slice().sort((a, b) => a.date.localeCompare(b.date)) : [];
+    if (!qs.length) return "";
+    const rows = qs.map(q => `
+      <div class="quarter-row">
+        <span class="quarter-date">${escapeHtml(q.name || q.date)}${q.name ? ` <span style="font-weight:400;color:#8b85b8">(${escapeHtml(q.date)})</span>` : ""}</span>
+        <span class="quarter-count">${q.count} ${q.count === 1 ? "entry" : "entries"}${q.manual ? " · edited" : ""}</span>
+        <span class="quarter-avg">${q.avg != null ? `${q.avg}%` : "No data"}</span>
+      </div>
+    `).join("");
+    return `
+      <div class="quarter-summary">
+        <div class="quarter-summary-title">Quarterly Averages</div>
+        ${rows}
+      </div>
+    `;
+  };
   const buildStudentPrintMarkup=(student)=>{
     const today = new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
     const minuteEntries = Array.isArray(student.minutes) ? student.minutes : [];
@@ -1687,17 +2016,12 @@ export default function App(){
     const goalMarkup = (student.charts ?? []).map((c) => {
       const pts = c.data ?? [];
       const latest = pts[pts.length - 1];
-      const goalPct = latest && c.goalValue ? Math.round((latest.y / c.goalValue) * 100) : null;
       return `
         <section class="goal-block">
           <div class="goal-header"><span>${(c.name ?? "Goal").replace(/[&<>\"']/g, s => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[s]))}</span><span class="goal-value">${latest ? `${latest.y}%` : "—"}</span></div>
-          <div class="mini-grid">
-            <div class="mini-box"><div class="mini-label">Baseline</div><div class="mini-number">${c.startValue ?? 0}%</div></div>
-            <div class="mini-box"><div class="mini-label">Goal</div><div class="mini-number">${c.goalValue ?? 0}%</div></div>
-            <div class="mini-box"><div class="mini-label">Progress to Goal</div><div class="mini-number">${goalPct != null ? `${goalPct}%` : "—"}</div></div>
-          </div>
           ${(latest && latest.notes) ? `<div class="goal-note">Session note: ${latest.notes}</div>` : ""}
           ${(c.notes) ? `<div class="goal-note goal-notes-block">Goal notes: ${c.notes}</div>` : ""}
+          ${buildQuartersMarkup(c)}
         </section>
       `;
     }).join("");
@@ -1714,8 +2038,8 @@ export default function App(){
       </div>
     `;
   };
-  const printHtmlDocument=(contentHtml,title)=>{
-    const printHtml = `<!doctype html><html><head><meta charset="utf-8" /><title>${title}</title><style>@page{size:A4 portrait;margin:0.6in;}body{margin:0;background:#fff;color:#2d2d3a;font-family:"Segoe UI",Arial,sans-serif;line-height:1.4}.report-page{break-before:page;page-break-before:always}.report-page:first-child{break-before:auto;page-break-before:auto}.report{width:100%;max-width:100%;box-sizing:border-box}.report-header{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #e5dfd5;padding-bottom:10px;margin-bottom:18px}.report-name{font-size:20px;font-weight:900;color:#2d2d3a}.report-meta{font-size:12px;color:#6b6b7d;margin-top:2px}.badge{width:18px;height:18px;border-radius:6px;background:linear-gradient(135deg,#ff6b6b 0 16.66%,#ffd166 16.66% 33.32%,#52c97a 33.32% 49.98%,#4e9af1 49.98% 66.64%,#a78bfa 66.64% 83.3%,#ff9f6b 83.3% 100%);display:inline-block}.section{border:1px solid #e7e1d8;border-radius:12px;background:#fff;padding:14px 16px;margin-bottom:18px;box-sizing:border-box;page-break-inside:avoid;break-inside:avoid}.section-title{font-size:15px;font-weight:800;margin-bottom:10px}.mini-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:10px}.mini-box{border:1px solid #e7e1d8;border-radius:8px;padding:10px 12px;background:#faf7f3;min-height:72px}.mini-label{font-size:10px;color:#7d7d8f;letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px}.mini-number{font-size:20px;font-weight:800;line-height:1.2}.goal-header{display:flex;justify-content:space-between;align-items:center;font-weight:800;font-size:16px;margin-bottom:8px}.goal-value{color:#ff6b6b}.goal-note{margin-top:10px;font-size:12px;color:#4d4d5f;background:#fffaf0;border:1px solid #f8dd9a;border-radius:8px;padding:8px 10px}.goal-notes-block{background:#fff7f0;border-color:#f9c7a5}.acc-item{padding:4px 0;border-bottom:1px dashed #ece5dc;font-size:13px}.acc-item:last-child{border-bottom:none}.empty{font-size:13px;color:#77778d}.minutes-summary{font-size:13px;color:#4d4d5f;margin-top:8px}.footer{margin-top:20px;display:flex;justify-content:space-between;align-items:center;font-size:11px;color:#7d7d8f;border-top:1px solid #ece5dc;padding-top:10px}</style></head><body>${contentHtml}</body></html>`;
+  const printHtmlDocument=(contentHtml,title,onDone)=>{
+    const printHtml = `<!doctype html><html><head><meta charset="utf-8" /><title>${title}</title><style>@page{size:A4 portrait;margin:0.6in;}body{margin:0;background:#fff;color:#2d2d3a;font-family:"Segoe UI",Arial,sans-serif;line-height:1.4}.report-page{break-before:page;page-break-before:always}.report-page:first-child{break-before:auto;page-break-before:auto}.report{width:100%;max-width:100%;box-sizing:border-box}.report-header{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #e5dfd5;padding-bottom:10px;margin-bottom:18px}.report-name{font-size:20px;font-weight:900;color:#2d2d3a}.report-meta{font-size:12px;color:#6b6b7d;margin-top:2px}.badge{width:18px;height:18px;border-radius:6px;background:linear-gradient(135deg,#ff6b6b 0 16.66%,#ffd166 16.66% 33.32%,#52c97a 33.32% 49.98%,#4e9af1 49.98% 66.64%,#a78bfa 66.64% 83.3%,#ff9f6b 83.3% 100%);display:inline-block}.section{border:1px solid #e7e1d8;border-radius:12px;background:#fff;padding:14px 16px;margin-bottom:18px;box-sizing:border-box;page-break-inside:avoid;break-inside:avoid}.goal-block{page-break-inside:avoid;break-inside:avoid}.section-title{font-size:15px;font-weight:800;margin-bottom:10px}.mini-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:10px}.mini-box{border:1px solid #e7e1d8;border-radius:8px;padding:10px 12px;background:#faf7f3;min-height:72px}.mini-label{font-size:10px;color:#7d7d8f;letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px}.mini-number{font-size:20px;font-weight:800;line-height:1.2}.goal-header{display:flex;justify-content:space-between;align-items:center;font-weight:800;font-size:16px;margin-bottom:8px}.goal-value{color:#ff6b6b}.goal-note{margin-top:10px;font-size:12px;color:#4d4d5f;background:#fffaf0;border:1px solid #f8dd9a;border-radius:8px;padding:8px 10px}.goal-notes-block{background:#fff7f0;border-color:#f9c7a5}.quarter-summary{margin-top:10px;border:1px solid #ded8fa;border-radius:8px;padding:8px 10px;background:#f6f4ff}.quarter-summary-title{font-size:11px;font-weight:800;color:#5b4bc4;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}.quarter-row{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:#3f3a5c;padding:3px 0;border-bottom:1px dashed #e2ddf7}.quarter-row:last-child{border-bottom:none}.quarter-avg{font-weight:800;color:#5b4bc4}.acc-item{padding:4px 0;border-bottom:1px dashed #ece5dc;font-size:13px}.acc-item:last-child{border-bottom:none}.empty{font-size:13px;color:#77778d}.minutes-summary{font-size:13px;color:#4d4d5f;margin-top:8px}.footer{margin-top:20px;display:flex;justify-content:space-between;align-items:center;font-size:11px;color:#7d7d8f;border-top:1px solid #ece5dc;padding-top:10px}</style></head><body>${contentHtml}</body></html>`;
     const iframe = document.createElement("iframe");
     iframe.setAttribute("title", title);
     iframe.style.position = "fixed";
@@ -1726,15 +2050,237 @@ export default function App(){
     iframe.style.pointerEvents = "none";
     iframe.srcdoc = printHtml;
     document.body.appendChild(iframe);
+    let cleaned = false;
+    const cleanup = () => {
+      if (cleaned) return;
+      cleaned = true;
+      iframe.remove();
+      onDone?.();
+    };
     iframe.onload = () => {
       try {
+        iframe.contentWindow?.addEventListener("afterprint", cleanup);
         iframe.contentWindow?.focus();
         iframe.contentWindow?.print();
       } catch (error) {
         console.error("Failed to print report", error);
+        cleanup();
       }
-      setTimeout(() => iframe.remove(), 1000);
+      // Fallback in case afterprint never fires (some browsers on a cancelled/failed dialog).
+      setTimeout(cleanup, 4000);
     };
+  };
+  // Renders a static snapshot of a goal's chart on a detached, off-screen canvas — used so every
+  // goal in Parent Print gets an actual chart image, not just whichever one happens to be open in
+  // the Goals tab (the only one with a live, on-screen Chart.js canvas to grab a frame from).
+  const renderGoalChartImage = (goal, pal) => new Promise(resolve => {
+    try {
+      const pts = goal?.data ?? [];
+      if (!pts.length) { resolve(null); return; }
+
+      const parseD = value => {
+        if (!value || typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+        const d = new Date(`${value}T12:00:00`);
+        return Number.isNaN(d.getTime()) ? null : d;
+      };
+      const startChartDate = parseD(goal.startDate);
+      const goalChartDate = parseD(goal.goalDate);
+      const hasValidTargetDates = Boolean(startChartDate && goalChartDate && startChartDate.getTime() <= goalChartDate.getTime());
+      const goalVal = goal.goalValue ?? 100;
+      const quarters = Array.isArray(goal.quarters) ? goal.quarters : [];
+
+      const canvas = document.createElement("canvas");
+      canvas.width = 900; canvas.height = 340;
+      canvas.style.position = "fixed";
+      canvas.style.left = "-9999px";
+      canvas.style.top = "0";
+      document.body.appendChild(canvas);
+
+      const bgPlugin = {
+        id: "chartBgStatic",
+        beforeDraw(ch) {
+          const { ctx, chartArea: { top, bottom, left, right }, scales: { y } } = ch;
+          if (!y) return;
+          const zones = [
+            { from: goalVal, to: 100, color: "rgba(82,201,122,0.08)" },
+            { from: goalVal * 0.7, to: goalVal, color: "rgba(255,209,102,0.08)" },
+            { from: 0, to: goalVal * 0.7, color: "rgba(255,107,107,0.06)" },
+          ];
+          zones.forEach(({ from, to, color }) => {
+            const yTop = y.getPixelForValue(Math.min(to, 100));
+            const yBot = y.getPixelForValue(Math.max(from, 0));
+            ctx.fillStyle = color;
+            ctx.fillRect(left, yTop, right - left, yBot - yTop);
+          });
+        },
+      };
+      const qLinePlugin = {
+        id: "quarterLinesStatic",
+        afterDraw(ch) {
+          const { ctx, chartArea, scales } = ch;
+          const x = scales.x;
+          if (!x || !chartArea) return;
+          const { top, bottom, left, right } = chartArea;
+          quarters.forEach(q => {
+            const qDate = parseD(q.date);
+            if (!qDate) return;
+            const px = x.getPixelForValue(qDate.getTime());
+            if (!Number.isFinite(px) || px < left || px > right) return;
+            ctx.save();
+            ctx.beginPath();
+            ctx.moveTo(px, top);
+            ctx.lineTo(px, bottom);
+            ctx.strokeStyle = "#7c6cf0";
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            ctx.restore();
+            ctx.save();
+            ctx.fillStyle = "#7c6cf0";
+            ctx.font = "700 11px 'Nunito Sans', sans-serif";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "top";
+            ctx.fillText("🏁", px, top + 3);
+            ctx.restore();
+          });
+        },
+      };
+
+      const chartInstance = new ChartJS(canvas, {
+        type: "line",
+        data: {
+          datasets: [
+            { label: goal.name ?? "Progress", data: pts, borderColor: pal.chip, backgroundColor: pal.chip + "22", tension: 0.35, fill: true, pointRadius: 4, pointBackgroundColor: "#fff", pointBorderColor: pal.chip, pointBorderWidth: 2 },
+            hasValidTargetDates && { label: "🎯 Target", data: [{ x: startChartDate, y: goal.startValue }, { x: goalChartDate, y: goal.goalValue }], borderColor: "#52c97a", borderDash: [6, 4], borderWidth: 2, fill: false, pointRadius: 4, pointBackgroundColor: "#52c97a" },
+          ].filter(Boolean),
+        },
+        options: {
+          responsive: false,
+          animation: false,
+          devicePixelRatio: 2,
+          plugins: {
+            legend: { labels: { color: "#5a5a72", font: { family: "'Nunito',sans-serif", size: 12, weight: "700" }, boxWidth: 14, padding: 16 } },
+            tooltip: { enabled: false },
+          },
+          scales: {
+            x: { type: "time", time: { unit: "day", tooltipFormat: "MMM d, yyyy" }, grid: { color: "rgba(0,0,0,0.04)" }, ticks: { color: "#9898b0", font: { family: "'Nunito Sans'", size: 11 } } },
+            y: { min: 0, max: 100, grid: { color: "rgba(0,0,0,0.04)" }, ticks: { color: "#9898b0", font: { family: "'Nunito'", size: 11 }, callback: v => v + "%" } },
+          },
+        },
+        plugins: [bgPlugin, qLinePlugin],
+      });
+
+      // With animation disabled Chart.js draws synchronously during construction, but give it
+      // one frame to be safe before grabbing the image.
+      requestAnimationFrame(() => {
+        const img = chartInstance.toBase64Image("image/png", 1);
+        chartInstance.destroy();
+        canvas.remove();
+        resolve(img);
+      });
+    } catch (error) {
+      console.error("Failed to render chart snapshot", error);
+      resolve(null);
+    }
+  });
+
+  // "Parent Print" — a full handout covering every one of the student's goals: headline numbers,
+  // a chart image, quarterly averages, and notes for each. No minutes or accommodations included.
+  const printGoalReport = async () => {
+    if (!student) return;
+    const today = new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+    const charts = student.charts ?? [];
+    if (!charts.length) return;
+    const pal = getPal(selSet);
+
+    const chartImages = await Promise.all(charts.map(g => renderGoalChartImage(g, pal)));
+
+    const goalBlocks = charts.map((g, gi) => {
+      const pts = g.data ?? [];
+      const latest = pts[pts.length - 1];
+      const chartImg = chartImages[gi];
+      return `
+        <section class="goal-block">
+          <div class="goal-header"><span>${escapeHtml(g.name ?? "Goal")}</span><span class="goal-value">${latest ? `${latest.y}%` : "—"}</span></div>
+          <div class="mini-grid">
+            <div class="mini-box"><div class="mini-label">Baseline</div><div class="mini-number">${g.startValue ?? 0}%</div></div>
+            <div class="mini-box"><div class="mini-label">Latest data entry</div><div class="mini-number">${latest ? `${latest.y}%` : "—"}</div></div>
+            <div class="mini-box"><div class="mini-label">Goal</div><div class="mini-number">${g.goalValue ?? 0}%</div></div>
+          </div>
+          ${chartImg
+            ? `<div style="margin-top:16px;border:1px solid #e7e1d8;border-radius:12px;padding:10px;background:#fff"><img src="${chartImg}" style="width:100%;display:block" /></div>`
+            : `<div class="empty" style="margin-top:12px">No data points yet to chart.</div>`}
+          ${(g.notes) ? `<div class="goal-note goal-notes-block">Goal notes: ${escapeHtml(g.notes)}</div>` : ""}
+          ${buildQuartersMarkup(g)}
+        </section>
+      `;
+    }).join("");
+
+    const html = `
+      <div class="report-page">
+        <div class="report">
+          <div class="report-header">
+            <div>
+              <div class="report-name">${escapeHtml(student?.name ?? "")}</div>
+              <div class="report-meta">Parent Copy · Generated ${today}</div>
+            </div>
+            <span class="badge"></span>
+          </div>
+          ${goalBlocks}
+          <div class="footer"><span>Progress Monitor · Parent Copy</span><span>${today}</span></div>
+        </div>
+      </div>
+    `;
+
+    printHtmlDocument(html, `Parent Report - ${student?.name ?? ""}`);
+  };
+
+  // Act on whichever attachment pool is currently active — the selected goal's own files, or
+  // the Accommodations tab's separate pool — not every file the student has everywhere.
+  const downloadAllAttachments = () => {
+    const atts = activeAttachments;
+    if (!atts.length) return;
+    // Stagger the downloads slightly — firing many `a.click()` calls in the same tick gets
+    // several of them silently dropped by the browser's popup/download-blocking heuristics.
+    atts.forEach((f, i) => {
+      setTimeout(() => {
+        try {
+          const bytes = Uint8Array.from(atob(f.content), c => c.charCodeAt(0));
+          const url = URL.createObjectURL(new Blob([bytes], { type: f.type || "application/octet-stream" }));
+          const a = document.createElement("a");
+          a.href = url; a.download = f.name; a.click();
+          setTimeout(() => URL.revokeObjectURL(url), 4000);
+        } catch (error) {
+          console.error("Failed to download attachment", f.name, error);
+        }
+      }, i * 250);
+    });
+  };
+  const printAllAttachments = () => {
+    const atts = activeAttachments;
+    if (!atts.length) return;
+    // Fire one print job per file, one after another — each attachment gets its own print
+    // dialog/page setup instead of being merged into a single multi-page document.
+    let i = 0;
+    const printNext = () => {
+      if (i >= atts.length) return;
+      const f = atts[i]; i += 1;
+      const type = f.type || "";
+      const body = type.startsWith("image/")
+        ? `<img src="data:${type};base64,${f.content}" style="max-width:100%;max-height:9in;display:block;margin:0 auto;border-radius:8px" />`
+        : type === "application/pdf"
+          ? `<embed src="data:application/pdf;base64,${f.content}" type="application/pdf" style="width:100%;height:9.5in;border:1px solid #e7e1d8;border-radius:8px" />`
+          : `<div style="text-align:center;padding:70px 20px;color:#77778d;border:1.5px dashed #e7e1d8;border-radius:12px"><div style="font-size:44px;margin-bottom:10px">📄</div><div style="font-weight:700;font-size:15px;color:#2d2d3a">${escapeHtml(f.name)}</div><div style="font-size:12px;margin-top:6px">${escapeHtml(type || "Unknown type")} · ${Math.round((f.size||0)/1024)}KB</div><div style="font-size:12px;margin-top:12px">This file type can't be previewed for printing — use "Download All" to save it instead.</div></div>`;
+      const page = `
+        <div class="report-page">
+          <div class="report">
+            <div class="report-header"><div><div class="report-name">${escapeHtml(f.name)}</div><div class="report-meta">${escapeHtml(student?.name ?? "")} · Attachment ${i} of ${atts.length}</div></div><span class="badge"></span></div>
+            ${body}
+          </div>
+        </div>
+      `;
+      printHtmlDocument(page, f.name, printNext);
+    };
+    printNext();
   };
   const printStudentReport = () => {
     const student = sets[selSet];
@@ -1752,20 +2298,15 @@ export default function App(){
     const goalMarkup = (student.charts ?? []).map((c) => {
       const pts = c.data ?? [];
       const latest = pts[pts.length - 1];
-      const goalPct = latest && c.goalValue ? Math.round((latest.y / c.goalValue) * 100) : null;
       return `
         <section class="goal-block">
           <div class="goal-header">
             <span>${(c.name ?? "Goal").replace(/[&<>"']/g, s => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[s]))}</span>
             <span class="goal-value">${latest ? `${latest.y}%` : "—"}</span>
           </div>
-          <div class="mini-grid">
-            <div class="mini-box"><div class="mini-label">Baseline</div><div class="mini-number">${c.startValue ?? 0}%</div></div>
-            <div class="mini-box"><div class="mini-label">Goal</div><div class="mini-number">${c.goalValue ?? 0}%</div></div>
-            <div class="mini-box"><div class="mini-label">Progress to Goal</div><div class="mini-number">${goalPct != null ? `${goalPct}%` : "—"}</div></div>
-          </div>
           ${(latest && latest.notes) ? `<div class="goal-note">Session note: ${latest.notes}</div>` : ""}
           ${(c.notes) ? `<div class="goal-note goal-notes-block">Goal notes: ${c.notes}</div>` : ""}
+          ${buildQuartersMarkup(c)}
         </section>
       `;
     }).join("");
@@ -1823,6 +2364,10 @@ export default function App(){
             padding: 14px 16px;
             margin-bottom: 18px;
             box-sizing: border-box;
+            page-break-inside: avoid;
+            break-inside: avoid;
+          }
+          .goal-block {
             page-break-inside: avoid;
             break-inside: avoid;
           }
@@ -1884,6 +2429,35 @@ export default function App(){
           .goal-notes-block {
             background: #fff7f0;
             border-color: #f9c7a5;
+          }
+          .quarter-summary {
+            margin-top: 10px;
+            border: 1px solid #ded8fa;
+            border-radius: 8px;
+            padding: 8px 10px;
+            background: #f6f4ff;
+          }
+          .quarter-summary-title {
+            font-size: 11px;
+            font-weight: 800;
+            color: #5b4bc4;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            margin-bottom: 6px;
+          }
+          .quarter-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 12px;
+            color: #3f3a5c;
+            padding: 3px 0;
+            border-bottom: 1px dashed #e2ddf7;
+          }
+          .quarter-row:last-child { border-bottom: none; }
+          .quarter-avg {
+            font-weight: 800;
+            color: #5b4bc4;
           }
           .acc-item {
             padding: 4px 0;
@@ -1981,7 +2555,7 @@ export default function App(){
       const d=JSON.parse(ev.target.result);
       const nextSets = Array.isArray(d) ? d : (d && Array.isArray(d.students) ? d.students : null);
       if (!Array.isArray(nextSets)) throw new Error("Invalid file");
-      const normalizedSets = nextSets.map(student => ({
+      const normalizedSets = nextSets.map(student => normalizeStudentAttachments({
         ...student,
         accommodations: Array.isArray(student.accommodations) ? student.accommodations : [],
         accDays: student.accDays ?? {},
@@ -2245,7 +2819,8 @@ export default function App(){
                       <option value="night">Night</option>
                     </select>
                   </div>
-                  {activeTab==="goals"&&<><button className="ghost-btn" onClick={undo} disabled={!history.length} style={{color:theme.text, borderColor: theme.border, background: theme.card}}>↩ Undo</button><button className="ghost-btn" onClick={()=>setShowAtt(true)} style={{color:theme.text, borderColor: theme.border, background: theme.card}}>📎 Files</button></>}
+                  {activeTab==="goals"&&<button className="ghost-btn" onClick={undo} disabled={!history.length} style={{color:theme.text, borderColor: theme.border, background: theme.card}}>↩ Undo</button>}
+                  {(activeTab==="goals"||activeTab==="accommodations")&&<button className="ghost-btn" onClick={()=>setShowAtt(true)} style={{color:theme.text, borderColor: theme.border, background: theme.card}}>📎 Files</button>}
                   <button className="ghost-btn" onClick={()=>setShowReport(true)} style={{color:theme.text, borderColor: theme.border, background: theme.card}}>📄 Report</button>
                 </div>
               </div>
@@ -2264,7 +2839,7 @@ export default function App(){
               <GoalsTab sets={sets} selSet={selSet} selChart={selChart} setSelChart={setSelChart}
                 upd={upd} snap={snap} undo={undo} history={history}
                 showAtt={showAtt} setShowAtt={setShowAtt} setShowAG={setShowAG}
-                chartRef={chartRef} editPt={editPt} setEditPt={setEditPt} theme={theme} pal={pal}/>
+                chartRef={chartRef} editPt={editPt} setEditPt={setEditPt} theme={theme} pal={pal} requestConfirm={requestConfirm}/>
             )}
           </>
         ):(
@@ -2381,24 +2956,37 @@ export default function App(){
       />
 
       <Modal show={showAtt} onClose={()=>setShowAtt(false)} title="Attachments" emoji="📎">
-        {chart&&(
+        {student&&(
           <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            <div style={{fontSize:12,color:"var(--ink-soft)"}}>
+              {attachmentsScope==="accommodations"
+                ? `Shared across the Accommodations tab for ${student.name} — separate from any goal's files.`
+                : `Only attached to "${chart?.name ?? "this goal"}" — other goals have their own files.`}
+            </div>
             <div><SectionLabel>Upload a File</SectionLabel>
               <input type="file" style={{marginTop:6}} onChange={e=>{
                 const f=e.target.files[0];if(!f) return;
-                const r=new FileReader();
-                r.onload=ev=>{upd(d=>{if(!Array.isArray(d[selSet].charts[selChart].attachments))d[selSet].charts[selChart].attachments=[];d[selSet].charts[selChart].attachments.push({name:f.name,type:f.type,size:f.size,content:ev.target.result.split(",")[1]});});};
-                r.readAsDataURL(f);e.target.value="";
+                addActiveAttachment(f);
+                e.target.value="";
               }}/></div>
-            {(chart.attachments??[]).length===0?(<div style={{textAlign:"center",padding:"14px 0",color:"var(--ink-soft)",fontSize:13}}>No files yet</div>
-            ):(chart.attachments??[]).map((f,i)=>(
-              <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",background:"var(--cream)",borderRadius:8,border:"1.5px solid var(--border)"}}>
-                <span style={{fontSize:20}}>📄</span>
-                <span style={{flex:1,fontSize:13,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.name}</span>
-                <span style={{fontSize:11,color:"var(--ink-soft)"}}>{Math.round(f.size/1024)}KB</span>
-                <button className="ghost-btn" onClick={()=>{const bytes=Uint8Array.from(atob(f.content),c=>c.charCodeAt(0));const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([bytes],{type:f.type}));a.download=f.name;a.click();}} style={{padding:"3px 10px"}}>↓</button>
-              </div>
-            ))}
+            {activeAttachments.length===0?(<div style={{textAlign:"center",padding:"14px 0",color:"var(--ink-soft)",fontSize:13}}>No files yet</div>
+            ):(
+              <>
+                <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                  <button className="ghost-btn" onClick={downloadAllAttachments} style={{padding:"5px 12px",fontSize:12}}>⬇ Download All ({activeAttachments.length})</button>
+                  <button className="ghost-btn" onClick={printAllAttachments} style={{padding:"5px 12px",fontSize:12}}>🖨 Print All</button>
+                </div>
+                {activeAttachments.map((f,i)=>(
+                  <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",background:"var(--cream)",borderRadius:8,border:"1.5px solid var(--border)"}}>
+                    <span style={{fontSize:20}}>📄</span>
+                    <span style={{flex:1,fontSize:13,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.name}</span>
+                    <span style={{fontSize:11,color:"var(--ink-soft)"}}>{Math.round(f.size/1024)}KB</span>
+                    <button className="ghost-btn" onClick={()=>{const bytes=Uint8Array.from(atob(f.content),c=>c.charCodeAt(0));const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([bytes],{type:f.type}));a.download=f.name;a.click();}} style={{padding:"3px 10px"}}>↓</button>
+                    <button className="ghost-btn" onClick={()=>removeActiveAttachment(i)} style={{padding:"3px 10px",color:"var(--red)"}}>🗑️</button>
+                  </div>
+                ))}
+              </>
+            )}
             <div style={{display:"flex",justifyContent:"flex-end"}}><button className="ghost-btn" onClick={()=>setShowAtt(false)}>Close</button></div>
           </div>
         )}
@@ -2423,7 +3011,7 @@ export default function App(){
         </div>
       </Modal>
 
-      <ReportModal show={showReport} onClose={()=>setShowReport(false)} sets={sets} selSet={selSet} onPrint={printStudentReport} />
+      <ReportModal show={showReport} onClose={()=>setShowReport(false)} sets={sets} selSet={selSet} onPrint={printStudentReport} chart={chart} onParentPrint={printGoalReport} />
 
       <Modal show={bulkReportOpen} onClose={()=>setBulkReportOpen(false)} title="Print Class Reports" emoji="🖨" wide>
         <div style={{display:"flex",flexDirection:"column",gap:18}}>
