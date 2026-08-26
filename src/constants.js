@@ -20,6 +20,11 @@ const STATUS_CONFIG={
   not_given:{label:"Not Given",icon:"—",color:"#9898b0",bg:"#f4f4f8",border:"#c8c8d8"},
   absent:   {label:"Absent",   icon:"☁",color:"#a78bfa",bg:"#f3f0ff",border:"#a78bfa"},
 };
+const ATTENDANCE_STATUS={
+  attended: {label:"Attended", icon:"✓",color:"#52c97a",bg:"#edfdf5",border:"#52c97a"},
+  late:     {label:"Late",     icon:"⏰",color:"#ffd166",bg:"#fffbec",border:"#e6a817"},
+  absent:   {label:"Absent",   icon:"✗",color:"#ff6b6b",bg:"#fff0f0",border:"#ff6b6b"},
+};
 const DEFAULT_MINUTE_OPTIONS=[
   {id:"reading",label:"Reading"},
   {id:"math",label:"Math"},
@@ -27,4 +32,4 @@ const DEFAULT_MINUTE_OPTIONS=[
   {id:"speech",label:"Speech"},
 ];
 
-export { PALETTE, EMOJIS, EMOJI_OPTIONS, MONTHS, DAYS, DOT_COLORS, STATUS_CONFIG, DEFAULT_MINUTE_OPTIONS };
+export { PALETTE, EMOJIS, EMOJI_OPTIONS, MONTHS, DAYS, DOT_COLORS, STATUS_CONFIG, ATTENDANCE_STATUS, DEFAULT_MINUTE_OPTIONS };
