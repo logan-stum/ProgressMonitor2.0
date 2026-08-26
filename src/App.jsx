@@ -7,10 +7,10 @@ import {
 import zoomPlugin from "chartjs-plugin-zoom";
 
 import "./styles/globalStyles.js";
-import { DEFAULT_MINUTE_OPTIONS } from "./constants.js";
+import { DEFAULT_MINUTE_OPTIONS, ATTENDANCE_STATUS, STATUS_CONFIG, MONTHS } from "./constants.js";
 import {
-  getPal, getEmoji, getStudentEmoji, normalizeStudentAttachments,
-  parseLocationHash, buildLocationHash, escapeHtml,
+  getPal, getEmoji, getStudentEmoji, normalizeStudentAttachments, ensureStudentId, formatTime,
+  parseLocationHash, buildLocationHash, escapeHtml, todayStr,
 } from "./utils.js";
 import SectionLabel from "./components/SectionLabel.jsx";
 import Modal from "./components/Modal.jsx";
@@ -21,6 +21,8 @@ import GoalsTab from "./components/GoalsTab.jsx";
 import AccommodationsTab from "./components/AccommodationsTab.jsx";
 import MinutesTab from "./components/MinutesTab.jsx";
 import ReportModal from "./components/ReportModal.jsx";
+import AttendanceGroupsModal from "./components/AttendanceGroupsModal.jsx";
+import TakeAttendanceModal from "./components/TakeAttendanceModal.jsx";
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, TimeScale, Filler, zoomPlugin);
 
@@ -31,13 +33,13 @@ export default function App(){
       const s=localStorage.getItem("pm_v2");
       const parsed = s ? JSON.parse(s) : [{name:"Alex Johnson",collapsed:false,accommodations:[],accDays:{},minutes:[],accommodationAttachments:[],
         charts:[{name:"Reading Fluency",startValue:40,startDate:"",goalValue:90,goalDate:"",data:[],notes:"",attachments:[]}]}];
-      return Array.isArray(parsed) ? parsed.map(student => normalizeStudentAttachments({
+      return Array.isArray(parsed) ? parsed.map(student => ensureStudentId(normalizeStudentAttachments({
         ...student,
         accommodations: Array.isArray(student.accommodations) ? student.accommodations : [],
         accDays: student.accDays ?? {},
         minutes: Array.isArray(student.minutes) ? student.minutes : [],
         charts: Array.isArray(student.charts) ? student.charts : [],
-      })) : [];
+      }))) : [];
     } catch { return []; }
   });
 
@@ -159,6 +161,16 @@ export default function App(){
       return s?JSON.parse(s):[];
     }catch{return [];}
   });
+  // Attendance-tracking groups are intentionally separate from the dashboard "groups" above —
+  // a student's membership here (by stable sid) never touches their dashboard groupId.
+  const [attendanceGroups,setAttendanceGroups]=useState(()=>{
+    try{
+      const s=localStorage.getItem("pm_attendance_groups");
+      return s?JSON.parse(s):[];
+    }catch{return [];}
+  });
+  const [showAttGroups,setShowAttGroups]=useState(false);
+  const [showTakeAttendance,setShowTakeAttendance]=useState(false);
   const [minuteOptions,setMinuteOptions]=useState(()=>{
     try{
       const s=localStorage.getItem("pm_minute_options");
@@ -255,6 +267,7 @@ export default function App(){
   useEffect(()=>{localStorage.setItem("pm_v2",JSON.stringify(sets));},[sets]);
   useEffect(()=>{localStorage.setItem("pm_minute_options",JSON.stringify(minuteOptions));},[minuteOptions]);
   useEffect(()=>{localStorage.setItem("pm_groups",JSON.stringify(groups));},[groups]);
+  useEffect(()=>{localStorage.setItem("pm_attendance_groups",JSON.stringify(attendanceGroups));},[attendanceGroups]);
   useEffect(()=>{localStorage.setItem("pm_dashboard_theme", JSON.stringify(themeKey));},[themeKey]);
 
   const snap=()=>setHistory(h=>{const n=[...h,JSON.stringify(sets)];if(n.length>20)n.shift();return n;});
@@ -268,7 +281,7 @@ export default function App(){
     if(!newSName.trim()) return;
     const name = newSName.trim();
     const emoji = (newSEmoji.trim() || getStudentEmoji({ name })).slice(0, 2);
-    upd(d => d.push({ name, emoji, groupId: "", collapsed: false, accommodations: [], accDays: {}, minutes: [], accommodationAttachments: [], charts: [] }));
+    upd(d => d.push(ensureStudentId({ name, emoji, groupId: "", collapsed: false, accommodations: [], accDays: {}, minutes: [], accommodationAttachments: [], charts: [] })));
     setSelSet(sets.length);setSelChart(0);setActiveTab("goals");setView("student");setNewSName("");setNewSEmoji("");setShowAS(false);
   };
   const addGoal=()=>{
@@ -312,6 +325,115 @@ export default function App(){
       if (student.groupId === groupId) student.groupId = "";
     }));
   };
+
+  // ─── Attendance groups ────────────────────────────────────────────────────
+  const saveAttendanceGroup=({id, name, times, studentIds})=>{
+    if (id) {
+      setAttendanceGroups(prev => prev.map(g => g.id === id ? { ...g, name, times, studentIds } : g));
+    } else {
+      setAttendanceGroups(prev => [...prev, { id: `attgrp-${Date.now()}-${Math.random().toString(16).slice(2,8)}`, name, times, studentIds }]);
+    }
+  };
+  const deleteAttendanceGroup=(id)=>{
+    setAttendanceGroups(prev => prev.filter(g => g.id !== id));
+  };
+  // Logs one minutes-tab entry per student in the group for this attendance-taking session.
+  // These are tagged kind:"attendance" so MinutesTab can show/print them separately from the
+  // plain running-total minute categories, which have no date and get replaced on re-entry.
+  const submitAttendance=(group, date, entries)=>{
+    snap();
+    upd(d => {
+      entries.forEach(({sid, status, start, stop}) => {
+        const idx = d.findIndex(s => s.sid === sid);
+        if (idx === -1) return;
+        if (!Array.isArray(d[idx].minutes)) d[idx].minutes = [];
+        d[idx].minutes.push({
+          id: `att-${Date.now()}-${Math.random().toString(16).slice(2,8)}-${sid}`,
+          kind: "attendance",
+          date,
+          groupId: group.id,
+          groupName: group.name,
+          status,
+          start: start || null,
+          stop: stop || null,
+        });
+      });
+    });
+  };
+  const printAttendanceLog=(attStudent, entries, groupFilter)=>{
+    if (!attStudent || !entries?.length) return;
+    const today = new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+    const rows = entries.map(e => {
+      const cfg = ATTENDANCE_STATUS[e.status] ?? ATTENDANCE_STATUS.attended;
+      const timeLabel = e.start ? ` (${formatTime(e.start)}${e.stop ? `–${formatTime(e.stop)}` : ""})` : "";
+      return `
+        <div class="quarter-row">
+          <span class="quarter-date">${escapeHtml(e.date)} — ${escapeHtml(e.groupName)}${timeLabel}</span>
+          <span class="quarter-avg" style="color:${cfg.color}">${cfg.icon} ${cfg.label}</span>
+        </div>
+      `;
+    }).join("");
+    const html = `
+      <div class="report-page">
+        <div class="report">
+          <div class="report-header">
+            <div>
+              <div class="report-name">${escapeHtml(attStudent.name)}</div>
+              <div class="report-meta">Attendance Log${groupFilter && groupFilter !== "all" ? ` — ${escapeHtml(groupFilter)}` : ""} · Generated ${today}</div>
+            </div>
+            <span class="badge"></span>
+          </div>
+          <div class="quarter-summary">
+            <div class="quarter-summary-title">Attendance</div>
+            ${rows}
+          </div>
+          <div class="footer"><span>Progress Monitor</span><span>${today}</span></div>
+        </div>
+      </div>
+    `;
+    printHtmlDocument(html, `Attendance Log - ${attStudent.name}`);
+  };
+  const printAccommodationsCalendar=(calStudent, calYear, calMonth, accList, accDays)=>{
+    if (!calStudent) return;
+    const today = new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+    const dim = new Date(calYear, calMonth + 1, 0).getDate();
+    const rows = [];
+    for (let d = 1; d <= dim; d++) {
+      const ds = `${calYear}-${String(calMonth + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+      const dayRec = accDays?.[ds];
+      if (!dayRec || Object.keys(dayRec).length === 0) continue;
+      const parts = Object.entries(dayRec).map(([accId, status]) => {
+        const acc = accList.find(a => a.id === accId);
+        const cfg = STATUS_CONFIG[status] ?? STATUS_CONFIG.given;
+        return `<span style="color:${cfg.color}">${cfg.icon} ${escapeHtml(acc?.name ?? "Accommodation")}: ${cfg.label}</span>`;
+      }).join(" &nbsp;·&nbsp; ");
+      rows.push(`
+        <div class="quarter-row">
+          <span class="quarter-date">${MONTHS[calMonth]} ${d}, ${calYear}</span>
+          <span style="font-size:12px">${parts}</span>
+        </div>
+      `);
+    }
+    const html = `
+      <div class="report-page">
+        <div class="report">
+          <div class="report-header">
+            <div>
+              <div class="report-name">${escapeHtml(calStudent.name)}</div>
+              <div class="report-meta">Accommodations Calendar — ${MONTHS[calMonth]} ${calYear} · Generated ${today}</div>
+            </div>
+            <span class="badge"></span>
+          </div>
+          <div class="quarter-summary">
+            <div class="quarter-summary-title">Logged Days</div>
+            ${rows.length ? rows.join("") : `<div class="empty">No accommodation days logged in ${MONTHS[calMonth]} ${calYear}.</div>`}
+          </div>
+          <div class="footer"><span>Progress Monitor</span><span>${today}</span></div>
+        </div>
+      </div>
+    `;
+    printHtmlDocument(html, `Accommodations Calendar - ${calStudent.name} - ${MONTHS[calMonth]} ${calYear}`);
+  };
   const addMinuteOption=()=>{
     const label=newMinuteOption.trim();
     if(!label) return;
@@ -322,7 +444,7 @@ export default function App(){
     setMinuteOptions(prev=>prev.filter(opt=>opt.id!==id));
   };
   const exportJSON=()=>{
-    const payload={version:1,groups,students:sets,minuteOptions};
+    const payload={version:1,groups,students:sets,minuteOptions,attendanceGroups};
     const a=document.createElement("a");
     a.href=URL.createObjectURL(new Blob([JSON.stringify(payload,null,2)],{type:"application/json"}));
     a.download="progress-data.json";a.click();
@@ -700,16 +822,17 @@ export default function App(){
       const d=JSON.parse(ev.target.result);
       const nextSets = Array.isArray(d) ? d : (d && Array.isArray(d.students) ? d.students : null);
       if (!Array.isArray(nextSets)) throw new Error("Invalid file");
-      const normalizedSets = nextSets.map(student => normalizeStudentAttachments({
+      const normalizedSets = nextSets.map(student => ensureStudentId(normalizeStudentAttachments({
         ...student,
         accommodations: Array.isArray(student.accommodations) ? student.accommodations : [],
         accDays: student.accDays ?? {},
         minutes: Array.isArray(student.minutes) ? student.minutes : [],
         charts: Array.isArray(student.charts) ? student.charts : [],
         groupId: student.groupId ?? "",
-      }));
+      })));
       setSets(normalizedSets);
       if (d && Array.isArray(d.groups)) setGroups(d.groups);
+      if (d && Array.isArray(d.attendanceGroups)) setAttendanceGroups(d.attendanceGroups);
       const importedMinuteOptions = Array.isArray(d?.minuteOptions) ? d.minuteOptions : (Array.isArray(d?.options) ? d.options : DEFAULT_MINUTE_OPTIONS);
       setMinuteOptions(importedMinuteOptions.length ? importedMinuteOptions : DEFAULT_MINUTE_OPTIONS);
       setSelSet(0); setSelChart(0); setView("dashboard");
@@ -901,6 +1024,7 @@ export default function App(){
             <div style={{display:"flex",flexDirection:"column",gap:7}}>
               <button className="action-btn" onClick={()=>setShowAS(true)} style={{background:theme.primary,color:"#fff",justifyContent:"center",width:"100%"}}>+ Add Student</button>
               <button className="ghost-btn" onClick={()=>setShowGroupModal(true)} style={{justifyContent:"center",fontSize:11, color:theme.text, borderColor: theme.border, background: theme.card}}>+ Add Group</button>
+              <button className="ghost-btn" onClick={()=>setShowAttGroups(true)} style={{justifyContent:"center",fontSize:11, color:theme.text, borderColor: theme.border, background: theme.card}}>+ Attendance Group</button>
               <button className="ghost-btn" onClick={()=>setShowMinuteOptions(true)} style={{justifyContent:"center",fontSize:11, color:theme.text, borderColor: theme.border, background: theme.card}}>⏱ Minutes Options</button>
               <div style={{display:"flex",gap:6}}>
                 <button className="ghost-btn" onClick={exportJSON} style={{flex:1,justifyContent:"center"}}>↓ Export</button>
@@ -932,6 +1056,7 @@ export default function App(){
             groups={groups}
             onOpenGroupModal={()=>setShowGroupModal(true)}
             onOpenBulkReport={openBulkReport}
+            onOpenTakeAttendance={()=>setShowTakeAttendance(true)}
             homeSearch={homeSearch}
             setHomeSearch={setHomeSearch}
             homeAccommodation={homeAccommodation}
@@ -977,9 +1102,9 @@ export default function App(){
             </div>
 
             {activeTab==="accommodations"?(
-              <AccommodationsTab student={student} selSet={selSet} upd={upd} theme={theme} pal={pal}/>
+              <AccommodationsTab student={student} selSet={selSet} upd={upd} theme={theme} pal={pal} onPrintCalendar={printAccommodationsCalendar}/>
             ):activeTab==="minutes"?(
-              <MinutesTab student={student} selSet={selSet} upd={upd} minuteOptions={minuteOptions} requestConfirm={requestConfirm} theme={theme} pal={pal}/>
+              <MinutesTab student={student} selSet={selSet} upd={upd} minuteOptions={minuteOptions} requestConfirm={requestConfirm} theme={theme} pal={pal} onPrintAttendance={printAttendanceLog}/>
             ):(
               <GoalsTab sets={sets} selSet={selSet} selChart={selChart} setSelChart={setSelChart}
                 upd={upd} snap={snap} undo={undo} history={history}
@@ -1023,6 +1148,25 @@ export default function App(){
           <button className="action-btn" onClick={addGroup} style={{background:"var(--yellow)",color:"#2d2d3a"}}>Add Group ✓</button>
         </div>
       </Modal>
+
+      <AttendanceGroupsModal
+        show={showAttGroups}
+        onClose={()=>setShowAttGroups(false)}
+        sets={sets}
+        groups={groups}
+        attendanceGroups={attendanceGroups}
+        onSave={saveAttendanceGroup}
+        onDelete={deleteAttendanceGroup}
+        requestConfirm={requestConfirm}
+      />
+
+      <TakeAttendanceModal
+        show={showTakeAttendance}
+        onClose={()=>setShowTakeAttendance(false)}
+        sets={sets}
+        attendanceGroups={attendanceGroups}
+        onSubmit={submitAttendance}
+      />
 
       <Modal show={showAG} onClose={()=>setShowAG(false)} title="Add Goal" emoji="🎯">
         <SectionLabel>Goal Name</SectionLabel>

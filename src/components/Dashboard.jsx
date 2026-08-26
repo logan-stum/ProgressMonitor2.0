@@ -13,6 +13,7 @@ function Dashboard({
   groups,
   onOpenGroupModal,
   onOpenBulkReport,
+  onOpenTakeAttendance,
   homeSearch,
   setHomeSearch,
   homeAccommodation,
@@ -175,6 +176,7 @@ function Dashboard({
             </select>
           </div>
           <button className="ghost-btn" onClick={onOpenBulkReport} style={{ background: theme.panel, color: theme.text, borderColor: theme.border }}>🖨 Print All Reports</button>
+          <button className="ghost-btn" onClick={onOpenTakeAttendance} style={{ background: theme.panel, color: theme.text, borderColor: theme.border }}>📋 Take Attendance</button>
           <button className="action-btn" onClick={onOpenGroupModal} style={{ background: theme.accent, color: theme.accentText }}>+ Add Group</button>
           <button className="action-btn" onClick={onAddStudent} style={{ background: theme.primary, color: "#fff" }}>+ Add Student</button>
         </div>

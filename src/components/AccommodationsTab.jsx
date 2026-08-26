@@ -7,7 +7,7 @@ import Modal from "./Modal.jsx";
 import Calendar from "./Calendar.jsx";
 
 // ─── Accommodations Tab ───────────────────────────────────────────────────────
-function AccommodationsTab({student,selSet,upd,theme,pal}){
+function AccommodationsTab({student,selSet,upd,theme,pal,onPrintCalendar}){
   const accList=student?.accommodations??[];
   const accDays=student?.accDays??{};
   const [calYear,setCalYear]=useState(currentYear);
@@ -101,10 +101,11 @@ function AccommodationsTab({student,selSet,upd,theme,pal}){
           )}
 
           <div style={{background:theme.card,borderRadius:"var(--r-lg)",border:`2px solid ${theme.border}`,padding:"20px",boxShadow:`0 8px 20px ${theme.shadow}`}}>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:18}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:18,gap:8}}>
               <button className="ghost-btn" onClick={prevMonth} style={{padding:"5px 12px",color:theme.text,borderColor:theme.border}}>‹</button>
               <div style={{fontFamily:"var(--font-head)",fontWeight:900,fontSize:16,color:theme.text}}>{MONTHS[calMonth]} {calYear}</div>
               <button className="ghost-btn" onClick={nextMonth} style={{padding:"5px 12px",color:theme.text,borderColor:theme.border}}>›</button>
+              <button className="ghost-btn" onClick={()=>onPrintCalendar?.(student,calYear,calMonth,accList,accDays)} style={{marginLeft:8,padding:"5px 12px",fontSize:11,color:theme.text,borderColor:theme.border}} title="Print this month's accommodations calendar">🖨 Print</button>
             </div>
             <Calendar year={calYear} month={calMonth} onSelectDay={openDay} accDays={accDays} accList={accList} selectedDay={selDay}/>
             <div style={{marginTop:14,display:"flex",gap:14,flexWrap:"wrap"}}>

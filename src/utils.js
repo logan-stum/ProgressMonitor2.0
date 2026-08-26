@@ -32,6 +32,23 @@ const normalizeStudentAttachments = student => {
 };
 const currentYear = () => new Date().getFullYear();
 
+// Every student needs a stable id independent of their position in the `sets` array (array
+// index shifts whenever a student earlier in the list is deleted). Attendance groups reference
+// students by this id so group membership survives reordering/deletion elsewhere. Assigns one
+// the first time a student is seen if it doesn't already have one.
+const ensureStudentId = student =>
+  student.sid ? student : { ...student, sid: `s_${Date.now()}_${Math.random().toString(36).slice(2, 9)}` };
+
+// Formats a 24-hour "HH:MM" value (what <input type="time"> gives/expects) as a friendly
+// 12-hour string, e.g. "09:05" -> "9:05 AM". Returns "" for anything that isn't HH:MM.
+const formatTime = hhmm => {
+  if (!hhmm || !/^\d{1,2}:\d{2}$/.test(hhmm)) return "";
+  const [h, m] = hhmm.split(":").map(Number);
+  const period = h >= 12 ? "PM" : "AM";
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${String(m).padStart(2, "0")} ${period}`;
+};
+
 // URL hash acts as this app's "router" so the dashboard and a student's page are addressable as
 // separate URLs — refreshing on a student page reloads back into that same page instead of
 // bouncing to the dashboard, and the browser back/forward buttons move between the two.
@@ -93,6 +110,6 @@ const escapeHtml = s => String(s ?? "").replace(/[&<>"']/g, ch => ({"&":"&amp;",
 
 export {
   getPal, getEmoji, getStudentEmoji, clamp, sanitize, todayStr,
-  normalizeStudentAttachments, currentYear, parseLocationHash, buildLocationHash,
+  normalizeStudentAttachments, ensureStudentId, formatTime, currentYear, parseLocationHash, buildLocationHash,
   burst, parseISODate, getOnTrackValue, escapeHtml,
 };
