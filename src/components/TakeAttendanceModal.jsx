@@ -11,6 +11,8 @@ function TakeAttendanceModal({show,onClose,sets,attendanceGroups,onSubmit}){
   const [sessionStop,setSessionStop]=useState("");
   const [statuses,setStatuses]=useState({}); // sid -> "attended" | "absent" | "late"
   const [lateArrival,setLateArrival]=useState({}); // sid -> "HH:MM"
+  const [lateReasons,setLateReasons]=useState({}); // sid -> why they were late
+  const [sessionNote,setSessionNote]=useState(""); // applies to every student in this submission (e.g. a time change)
 
   const group=attendanceGroups.find(g=>g.id===groupId)??null;
   const groupStudents=group?sets.filter(s=>(group.studentIds??[]).includes(s.sid)):[];
@@ -24,6 +26,8 @@ function TakeAttendanceModal({show,onClose,sets,attendanceGroups,onSubmit}){
     groupStudents.forEach(s=>{ initial[s.sid]="attended"; });
     setStatuses(initial);
     setLateArrival({});
+    setLateReasons({});
+    setSessionNote("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   },[groupId]);
 
@@ -31,6 +35,7 @@ function TakeAttendanceModal({show,onClose,sets,attendanceGroups,onSubmit}){
 
   const setStatus=(sid,status)=>setStatuses(st=>({...st,[sid]:status}));
   const setLate=(sid,val)=>setLateArrival(t=>({...t,[sid]:val}));
+  const setLateReason=(sid,val)=>setLateReasons(t=>({...t,[sid]:val}));
 
   const applyTimeSlot=(slot)=>{
     setSessionStart(slot.start ?? "");
@@ -41,16 +46,17 @@ function TakeAttendanceModal({show,onClose,sets,attendanceGroups,onSubmit}){
     if(!group) return;
     const entries=groupStudents.map(s=>{
       const status=statuses[s.sid]??"attended";
-      if(status==="absent") return { sid:s.sid, status, start:null, stop:null };
-      if(status==="late") return { sid:s.sid, status, start:lateArrival[s.sid]||null, stop:sessionStop||null };
-      return { sid:s.sid, status, start:sessionStart||null, stop:sessionStop||null };
+      const base={ sid:s.sid, status, sessionNote: sessionNote.trim()||null };
+      if(status==="absent") return { ...base, start:null, stop:null, lateReason:null };
+      if(status==="late") return { ...base, start:lateArrival[s.sid]||null, stop:sessionStop||null, lateReason:(lateReasons[s.sid]||"").trim()||null };
+      return { ...base, start:sessionStart||null, stop:sessionStop||null, lateReason:null };
     });
     onSubmit(group, date, entries);
     close();
   };
 
   return(
-    <Modal show={show} onClose={close} title="Take Attendance" emoji="📋" wide>
+    <Modal show={show} onClose={close} title="Take Attendance" emoji="📋" xl>
       {!group?(
         <div style={{display:"flex",flexDirection:"column",gap:8}}>
           {attendanceGroups.length===0?(
@@ -94,6 +100,12 @@ function TakeAttendanceModal({show,onClose,sets,attendanceGroups,onSubmit}){
           </div>
           <div style={{fontSize:11,color:"var(--ink-soft)",marginTop:-8}}>These default from the group's set times but can be changed for today's session — "Attended" students will use them.</div>
 
+          <div>
+            <SectionLabel>Note for today's session (optional)</SectionLabel>
+            <input type="text" value={sessionNote} onChange={e=>setSessionNote(e.target.value)} placeholder="e.g. Group met 15 minutes late today due to fire drill" style={{fontSize:12}}/>
+            <div style={{fontSize:11,color:"var(--ink-soft)",marginTop:4}}>This note is saved to every student's attendance log entry for this session — use it for things like a time change.</div>
+          </div>
+
           <div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:340,overflowY:"auto"}}>
             {groupStudents.map(s=>{
               const status=statuses[s.sid]??"attended";
@@ -114,9 +126,15 @@ function TakeAttendanceModal({show,onClose,sets,attendanceGroups,onSubmit}){
                     </div>
                   </div>
                   {status==="late"&&(
-                    <div style={{display:"flex",alignItems:"center",gap:8}}>
-                      <SectionLabel>Actual arrival time</SectionLabel>
-                      <input type="time" value={lateArrival[s.sid]??""} onChange={e=>setLate(s.sid,e.target.value)} style={{width:150}}/>
+                    <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                      <div style={{display:"flex",alignItems:"center",gap:8}}>
+                        <SectionLabel>Actual arrival time</SectionLabel>
+                        <input type="time" value={lateArrival[s.sid]??""} onChange={e=>setLate(s.sid,e.target.value)} style={{width:150}}/>
+                      </div>
+                      <div>
+                        <SectionLabel>Why were they late? (optional)</SectionLabel>
+                        <textarea rows={3} value={lateReasons[s.sid]??""} onChange={e=>setLateReason(s.sid,e.target.value)} placeholder="e.g. Bus was delayed, doctor's appointment, overslept…" style={{width:"100%",fontSize:13,marginTop:4,resize:"vertical"}}/>
+                      </div>
                     </div>
                   )}
                 </div>
