@@ -2,17 +2,20 @@ import { useState, useEffect } from "react";
 import { ATTENDANCE_STATUS } from "../constants.js";
 import { formatTime } from "../utils.js";
 import SectionLabel from "./SectionLabel.jsx";
+import DateRangePrintModal from "./DateRangePrintModal.jsx";
 
 function MinutesTab({student, selSet, upd, minuteOptions, requestConfirm, theme, pal, onPrintAttendance}){
   const [selectedOptionId,setSelectedOptionId]=useState(minuteOptions[0]?.id ?? "");
   const [minutesValue,setMinutesValue]=useState("30");
   const [editingId,setEditingId]=useState(null);
   const [attGroupFilter,setAttGroupFilter]=useState("all");
+  const [showPrintRange,setShowPrintRange]=useState(false);
   const entries=Array.isArray(student.minutes)?[...student.minutes]:[];
   const plainEntries=entries.filter(e=>e.kind!=="attendance");
   const attendanceEntries=entries.filter(e=>e.kind==="attendance").sort((a,b)=>(b.date??"").localeCompare(a.date??""));
   const attendanceGroupNames=[...new Set(attendanceEntries.map(e=>e.groupName))];
   const visibleAttendance=attGroupFilter==="all"?attendanceEntries:attendanceEntries.filter(e=>e.groupName===attGroupFilter);
+  const attendanceDates=visibleAttendance.map(e=>e.date).filter(Boolean).sort();
 
   useEffect(()=>{
     if(!minuteOptions.some(option=>option.id===selectedOptionId) && minuteOptions[0]){
@@ -144,7 +147,7 @@ function MinutesTab({student, selSet, upd, minuteOptions, requestConfirm, theme,
               </select>
             )}
             {visibleAttendance.length>0&&(
-              <button className="ghost-btn" onClick={()=>onPrintAttendance?.(student, visibleAttendance, attGroupFilter)} style={{padding:"5px 12px",fontSize:12}}>🖨 Print</button>
+              <button className="ghost-btn" onClick={()=>setShowPrintRange(true)} style={{padding:"5px 12px",fontSize:12}}>🖨 Print</button>
             )}
           </div>
         </div>
@@ -154,19 +157,40 @@ function MinutesTab({student, selSet, upd, minuteOptions, requestConfirm, theme,
           <div style={{display:"flex",flexDirection:"column",gap:8}}>
             {visibleAttendance.map((entry,i)=>{
               const cfg=ATTENDANCE_STATUS[entry.status]??ATTENDANCE_STATUS.attended;
+              const noteLine=[
+                entry.status==="late"&&entry.lateReason ? `Late reason: ${entry.lateReason}` : null,
+                entry.sessionNote ? `Session note: ${entry.sessionNote}` : null,
+              ].filter(Boolean);
               return(
-                <div key={entry.id ?? i} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 12px",borderRadius:10,background:"var(--cream)",border:"1.5px solid var(--border)"}}>
-                  <div style={{minWidth:96,fontSize:12,color:"var(--ink-soft)",fontWeight:700}}>{entry.date}</div>
-                  <div style={{flex:1,minWidth:0,fontWeight:700,fontSize:13,color:"var(--ink)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{entry.groupName}</div>
-                  {entry.start&&<div style={{fontSize:12,color:"var(--ink-soft)"}}>{formatTime(entry.start)}{entry.stop?` – ${formatTime(entry.stop)}`:""}</div>}
-                  <span style={{padding:"3px 10px",borderRadius:999,fontSize:11,fontWeight:800,border:`1.5px solid ${cfg.border}`,background:cfg.bg,color:cfg.color}}>{cfg.icon} {cfg.label}</span>
-                  <button className="ghost-btn" onClick={()=>upd(d=>d[selSet].minutes=(d[selSet].minutes??[]).filter(item=>item.id!==entry.id))} style={{padding:"3px 8px",fontSize:11,color:"var(--red)"}}>🗑️</button>
+                <div key={entry.id ?? i} style={{display:"flex",flexDirection:"column",gap:4,padding:"10px 12px",borderRadius:10,background:"var(--cream)",border:"1.5px solid var(--border)"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:12}}>
+                    <div style={{minWidth:96,fontSize:12,color:"var(--ink-soft)",fontWeight:700}}>{entry.date}</div>
+                    <div style={{flex:1,minWidth:0,fontWeight:700,fontSize:13,color:"var(--ink)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{entry.groupName}</div>
+                    {entry.start&&<div style={{fontSize:12,color:"var(--ink-soft)"}}>{formatTime(entry.start)}{entry.stop?` – ${formatTime(entry.stop)}`:""}</div>}
+                    <span style={{padding:"3px 10px",borderRadius:999,fontSize:11,fontWeight:800,border:`1.5px solid ${cfg.border}`,background:cfg.bg,color:cfg.color}}>{cfg.icon} {cfg.label}</span>
+                    <button className="ghost-btn" onClick={()=>upd(d=>d[selSet].minutes=(d[selSet].minutes??[]).filter(item=>item.id!==entry.id))} style={{padding:"3px 8px",fontSize:11,color:"var(--red)"}}>🗑️</button>
+                  </div>
+                  {noteLine.length>0&&(
+                    <div style={{fontSize:11,color:"var(--ink-soft)",paddingLeft:2}}>📝 {noteLine.join(" · ")}</div>
+                  )}
                 </div>
               );
             })}
           </div>
         )}
       </div>
+
+      <DateRangePrintModal
+        show={showPrintRange}
+        onClose={()=>setShowPrintRange(false)}
+        title="Print Attendance Log"
+        defaultFrom={attendanceDates[0]}
+        defaultTo={attendanceDates[attendanceDates.length-1]}
+        onPrint={(from,to)=>{
+          const filtered=visibleAttendance.filter(e=>e.date>=from&&e.date<=to);
+          onPrintAttendance?.(student, filtered, attGroupFilter);
+        }}
+      />
     </div>
   );
 }

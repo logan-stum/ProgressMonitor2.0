@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect } from "react";
 import "chartjs-adapter-date-fns";
 import {
   Chart as ChartJS, CategoryScale, LinearScale, PointElement,
@@ -10,7 +10,7 @@ import "./styles/globalStyles.js";
 import { DEFAULT_MINUTE_OPTIONS, ATTENDANCE_STATUS, STATUS_CONFIG, MONTHS } from "./constants.js";
 import {
   getPal, getEmoji, getStudentEmoji, normalizeStudentAttachments, ensureStudentId, formatTime,
-  parseLocationHash, buildLocationHash, escapeHtml, todayStr,
+  parseLocationHash, buildLocationHash, escapeHtml,
 } from "./utils.js";
 import SectionLabel from "./components/SectionLabel.jsx";
 import Modal from "./components/Modal.jsx";
@@ -343,7 +343,7 @@ export default function App(){
   const submitAttendance=(group, date, entries)=>{
     snap();
     upd(d => {
-      entries.forEach(({sid, status, start, stop}) => {
+      entries.forEach(({sid, status, start, stop, sessionNote, lateReason}) => {
         const idx = d.findIndex(s => s.sid === sid);
         if (idx === -1) return;
         if (!Array.isArray(d[idx].minutes)) d[idx].minutes = [];
@@ -356,6 +356,8 @@ export default function App(){
           status,
           start: start || null,
           stop: stop || null,
+          sessionNote: sessionNote || null,
+          lateReason: lateReason || null,
         });
       });
     });
@@ -366,10 +368,17 @@ export default function App(){
     const rows = entries.map(e => {
       const cfg = ATTENDANCE_STATUS[e.status] ?? ATTENDANCE_STATUS.attended;
       const timeLabel = e.start ? ` (${formatTime(e.start)}${e.stop ? `–${formatTime(e.stop)}` : ""})` : "";
+      const notesHtml = [
+        e.status === "late" && e.lateReason ? `Late reason: ${escapeHtml(e.lateReason)}` : null,
+        e.sessionNote ? `Session note: ${escapeHtml(e.sessionNote)}` : null,
+      ].filter(Boolean).join(" · ");
       return `
-        <div class="quarter-row">
-          <span class="quarter-date">${escapeHtml(e.date)} — ${escapeHtml(e.groupName)}${timeLabel}</span>
-          <span class="quarter-avg" style="color:${cfg.color}">${cfg.icon} ${cfg.label}</span>
+        <div class="quarter-row" style="flex-direction:column;align-items:flex-start;gap:2px">
+          <div style="display:flex;justify-content:space-between;width:100%">
+            <span class="quarter-date">${escapeHtml(e.date)} — ${escapeHtml(e.groupName)}${timeLabel}</span>
+            <span class="quarter-avg" style="color:${cfg.color}">${cfg.icon} ${cfg.label}</span>
+          </div>
+          ${notesHtml ? `<div style="font-size:11px;color:#6b6b7d">${notesHtml}</div>` : ""}
         </div>
       `;
     }).join("");
@@ -393,46 +402,84 @@ export default function App(){
     `;
     printHtmlDocument(html, `Attendance Log - ${attStudent.name}`);
   };
-  const printAccommodationsCalendar=(calStudent, calYear, calMonth, accList, accDays)=>{
-    if (!calStudent) return;
+  const printAccommodationsCalendar=(calStudent, fromDate, toDate, accList, accDays)=>{
+    if (!calStudent || !fromDate || !toDate) return;
+    const start = new Date(fromDate + "T00:00:00");
+    const end = new Date(toDate + "T00:00:00");
+    if (start > end) return;
     const today = new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
-    const dim = new Date(calYear, calMonth + 1, 0).getDate();
-    const rows = [];
-    for (let d = 1; d <= dim; d++) {
-      const ds = `${calYear}-${String(calMonth + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+
+    // Tally totals across the range for a summary strip up top — replaces the calendar grid,
+    // which only showed color dots with no real information a reader could act on.
+    const totals = { given:0, refused:0, not_given:0, absent:0, na:0 };
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      const ds = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
       const dayRec = accDays?.[ds];
-      if (!dayRec || Object.keys(dayRec).length === 0) continue;
-      const parts = Object.entries(dayRec).map(([accId, status]) => {
-        const acc = accList.find(a => a.id === accId);
-        const cfg = STATUS_CONFIG[status] ?? STATUS_CONFIG.given;
-        return `<span style="color:${cfg.color}">${cfg.icon} ${escapeHtml(acc?.name ?? "Accommodation")}: ${cfg.label}</span>`;
-      }).join(" &nbsp;·&nbsp; ");
-      rows.push(`
-        <div class="quarter-row">
-          <span class="quarter-date">${MONTHS[calMonth]} ${d}, ${calYear}</span>
-          <span style="font-size:12px">${parts}</span>
+      if (!dayRec) continue;
+      accList.forEach(a => { if (dayRec[a.id] && totals[dayRec[a.id]] !== undefined) totals[dayRec[a.id]]++; });
+    }
+    const totalLogged = totals.given + totals.refused + totals.not_given + totals.absent + totals.na;
+    const compliance = totalLogged > 0 ? Math.round((totals.given / totalLogged) * 100) : null;
+
+    const summaryHtml = `
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px">
+        ${Object.entries(STATUS_CONFIG).map(([key,cfg]) => `
+          <div style="padding:8px 14px;border-radius:10px;background:${cfg.bg};border:1.5px solid ${cfg.border}66;min-width:90px">
+            <div style="font-size:10px;font-weight:800;color:${cfg.color};text-transform:uppercase;letter-spacing:.05em">${cfg.label}</div>
+            <div style="font-size:20px;font-weight:900;color:${cfg.color}">${totals[key]}</div>
+          </div>
+        `).join("")}
+        ${compliance != null ? `
+          <div style="padding:8px 14px;border-radius:10px;background:#edfdf5;border:1.5px solid #52c97a66;min-width:110px">
+            <div style="font-size:10px;font-weight:800;color:#1a8a7a;text-transform:uppercase;letter-spacing:.05em">Compliance</div>
+            <div style="font-size:20px;font-weight:900;color:#1a8a7a">${compliance}%</div>
+          </div>
+        ` : ""}
+      </div>
+    `;
+
+    // Detailed daily list for every logged day in the range — this is what guarantees every
+    // piece of data (including N/A explanations and day notes) actually makes it onto paper.
+    const detailRows = [];
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      const ds = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      const dayRec = accDays?.[ds];
+      if (!dayRec) continue;
+      const parts = accList
+        .filter(a => dayRec[a.id] !== undefined)
+        .map(a => {
+          const cfg = STATUS_CONFIG[dayRec[a.id]] ?? STATUS_CONFIG.given;
+          const explanation = dayRec[a.id] === "na" ? dayRec._explanations?.[a.id] : null;
+          return `<div style="margin-bottom:4px"><span style="color:${cfg.color};font-weight:700">${cfg.icon} ${escapeHtml(a.name)}: ${cfg.label}</span>${explanation ? `<div style="font-size:11px;color:#6b6b7d;margin-left:16px">↳ ${escapeHtml(explanation)}</div>` : ""}</div>`;
+        }).join("");
+      if (!parts && !dayRec._note) continue;
+      detailRows.push(`
+        <div style="border:1px solid #e7e1d8;border-radius:10px;padding:10px 12px;margin-bottom:8px;page-break-inside:avoid;break-inside:avoid">
+          <div style="font-weight:800;font-size:12px;margin-bottom:6px;color:#2d2d3a">${d.toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric",year:"numeric"})}</div>
+          ${parts}
+          ${dayRec._note ? `<div style="margin-top:6px;font-size:11px;background:#fffaf0;border:1px solid #f8dd9a;border-radius:6px;padding:6px 8px">📝 ${escapeHtml(dayRec._note)}</div>` : ""}
         </div>
       `);
     }
+
     const html = `
       <div class="report-page">
         <div class="report">
           <div class="report-header">
             <div>
               <div class="report-name">${escapeHtml(calStudent.name)}</div>
-              <div class="report-meta">Accommodations Calendar — ${MONTHS[calMonth]} ${calYear} · Generated ${today}</div>
+              <div class="report-meta">Accommodations Tracker — ${fromDate} to ${toDate} · Generated ${today}</div>
             </div>
             <span class="badge"></span>
           </div>
-          <div class="quarter-summary">
-            <div class="quarter-summary-title">Logged Days</div>
-            ${rows.length ? rows.join("") : `<div class="empty">No accommodation days logged in ${MONTHS[calMonth]} ${calYear}.</div>`}
-          </div>
+          ${summaryHtml}
+          ${detailRows.length ? detailRows.join("") : `<div class="empty">No accommodation days logged in this range.</div>`}
           <div class="footer"><span>Progress Monitor</span><span>${today}</span></div>
         </div>
       </div>
     `;
-    printHtmlDocument(html, `Accommodations Calendar - ${calStudent.name} - ${MONTHS[calMonth]} ${calYear}`);
+
+    printHtmlDocument(html, `Accommodations Tracker - ${calStudent.name} - ${fromDate} to ${toDate}`);
   };
   const addMinuteOption=()=>{
     const label=newMinuteOption.trim();

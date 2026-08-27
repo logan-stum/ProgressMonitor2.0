@@ -13,12 +13,13 @@ const EMOJI_OPTIONS=[
   "😀","😁","😂","😃","😄","😅","😆","😉","😊","🙂","🙃","😌","😍","🥰","😎","🤩","😇","🤪","😬","🤭","😮","😴","🤓","😺","😸","😹","😻","😼","😽","🙀","😿","😾","🐶","🐱","🐭","🐹","🐰","🦊","🐻","🐼","🐨","🐯","🦁","🐮","🐷","🐸","🐵","🐔","🐧","🐦","🦆","🦄","🐝","🦋","🌼","🌻","🌞","🌙","⭐","🌟","✨","⚡","🔥","💫","🌈","🌍","🌱","🌿","☀️","🌤️","🌊","🚀","🛸","🚁","✈️","🚗","🏠","🏫","🎒","🎓","📚","✏️","📝","🧠","🎯","🏆","🥇","🥈","🥉","🎉","🎊","🎁","🎨","🧩","🎵","🎶","🎮","🧸","🍎","🍉","🍓","🍇","🍒","🥕","🌮","🍔","🍕","🍦","☕","🍵","💡","🔍","✅","❌","⚠️","💯","🔒","🔑","🛠️","⏱️","📅","⏰","💙","💚","💛","💜","💖","❤️","🧡","🙌","👏","👋","🤝","🧑‍🏫","👩‍🏫","👨‍🏫","👦","👧","🧒","🧑","👨","👩","🦄","🐙","🐠","🌸","💐","🌹","🌷","🪴","☘️","🍀","⚽","🏀","🎾","🏈","🏐","🎲","🎳","🏓","🎻","🎺","🎹","🎼","🥁" ];
 const MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"];
 const DAYS=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-const DOT_COLORS={given:"#52c97a",refused:"#ff6b6b",not_given:"#c8c8d8",absent:"#a78bfa"};
+const DOT_COLORS={given:"#52c97a",refused:"#ff6b6b",not_given:"#c8c8d8",absent:"#a78bfa",na:"#4e9af1"};
 const STATUS_CONFIG={
   given:    {label:"Given",    icon:"✓",color:"#52c97a",bg:"#edfdf5",border:"#52c97a"},
   refused:  {label:"Refused",  icon:"✗",color:"#ff6b6b",bg:"#fff0f0",border:"#ff6b6b"},
   not_given:{label:"Not Given",icon:"—",color:"#9898b0",bg:"#f4f4f8",border:"#c8c8d8"},
   absent:   {label:"Absent",   icon:"☁",color:"#a78bfa",bg:"#f3f0ff",border:"#a78bfa"},
+  na:       {label:"N/A",      icon:"⊘",color:"#4e9af1",bg:"#eef5ff",border:"#4e9af1"},
 };
 const ATTENDANCE_STATUS={
   attended: {label:"Attended", icon:"✓",color:"#52c97a",bg:"#edfdf5",border:"#52c97a"},

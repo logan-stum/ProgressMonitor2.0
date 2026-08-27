@@ -21,9 +21,11 @@ function Calendar({year,month,onSelectDay,accDays,accList,selectedDay}){
           const ds=`${year}-${String(month+1).padStart(2,"0")}-${String(c.day).padStart(2,"0")}`;
           const isToday=ds===today, isSel=ds===selectedDay;
           const dayRec=accDays?.[ds];
-          // Only show dots if this day has been explicitly logged
-          const hasEntry = !!dayRec && Object.keys(dayRec).length > 0;
-          let counts = { given:0, refused:0, not_given:0, absent:0 };
+          // Only count real accommodation entries — accDays[ds] may also carry meta keys like
+          // _note (a general day note) and _explanations (N/A reasons) that aren't statuses.
+          const hasEntry = !!dayRec && (accList?.some(a => dayRec[a.id] !== undefined) ?? false);
+          const hasNote = !!dayRec?._note;
+          let counts = { given:0, refused:0, not_given:0, absent:0, na:0 };
           if (hasEntry && accList?.length > 0) {
             accList.forEach(a => {
               const s = dayRec[a.id] ?? "given";
@@ -32,8 +34,9 @@ function Calendar({year,month,onSelectDay,accDays,accList,selectedDay}){
           }
           return(
             <div key={i} className={`cal-day${isToday?" today":""}${isSel?" selected":""}`} onClick={()=>onSelectDay(ds)}
-              title={hasEntry?`Given:${counts.given} · Refused:${counts.refused} · Not Given:${counts.not_given} · Absent:${counts.absent}`:""}>
+              title={hasEntry?`Given:${counts.given} · Refused:${counts.refused} · Not Given:${counts.not_given} · Absent:${counts.absent} · N/A:${counts.na}`:""}>
               <span style={{lineHeight:1}}>{c.day}</span>
+              {hasNote&&<span style={{position:"absolute",top:2,right:3,fontSize:9,lineHeight:1}} title="Has a note">📝</span>}
               {hasEntry&&(
                 <div className="cal-day-dots">
                   {Object.entries(counts).map(([status,count])=>
