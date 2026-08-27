@@ -313,6 +313,78 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
   const goalChartDate = parseChartDate(chart?.goalDate);
   const hasValidTargetDates = Boolean(startChartDate && goalChartDate && startChartDate.getTime() <= goalChartDate.getTime());
 
+  // ─── Prediction line ──────────────────────────────────────────────────────
+  // A least-squares linear regression fit to the student's most recent entries, extrapolated out
+  // to the goal's target date. Weighting to a recent window (rather than every entry ever logged)
+  // means a recent upswing or decline actually moves the prediction — an old run of high/low
+  // scores from months ago shouldn't keep dominating the trend forever. This is a genuine trend
+  // fit through actual data — distinct from the "🎯 Target" dataset above, which is just the
+  // straight baseline→goal reference line showing what "on pace" looks like, not what's happening.
+  const PREDICTION_WINDOW = 5;
+  const PREDICTION_META = {
+    mastered:     { label:"Mastered",             emoji:"🏆", color:"#1a8a7a", bg:"#e8faf7", border:"#26c6b0" },
+    sufficient:   { label:"Sufficient Progress",  emoji:"✅", color:"#1a8a5a", bg:"#edfdf5", border:"#52c97a" },
+    minimal:      { label:"Minimal Progress",     emoji:"⚠️", color:"#9a6a00", bg:"#fffbec", border:"#e6a817" },
+    insufficient: { label:"Insufficient Progress",emoji:"❗", color:"#c0392b", bg:"#fff0f0", border:"#ff6b6b" },
+  };
+  let prediction = null;
+  const regressionPtsAll = allPts
+    .map(p => ({ t: parseChartDate(p.x)?.getTime(), y: p.y }))
+    .filter(p => Number.isFinite(p.t));
+  const regressionPts = regressionPtsAll.slice(-PREDICTION_WINDOW);
+  if (regressionPts.length >= 2 && goalChartDate && chart?.goalValue != null) {
+    const n = regressionPts.length;
+    const t0 = regressionPts[0].t;
+    const xs = regressionPts.map(p => (p.t - t0) / 86400000); // days since the window's first entry
+    const ys = regressionPts.map(p => p.y);
+    const sumX = xs.reduce((a, x) => a + x, 0);
+    const sumY = ys.reduce((a, y) => a + y, 0);
+    const sumXY = xs.reduce((a, x, i) => a + x * ys[i], 0);
+    const sumXX = xs.reduce((a, x) => a + x * x, 0);
+    const denom = n * sumXX - sumX * sumX;
+    const avgValue = sumY / n; // average of the same recent window, so a downward trend isn't
+                                // masked by a run of old high scores from months ago
+    if (denom !== 0) {
+      const slope = (n * sumXY - sumX * sumY) / denom; // % change per day
+      const intercept = (sumY - slope * sumX) / n;
+      const goalDays = (goalChartDate.getTime() - t0) / 86400000;
+      const predictedValue = clamp(intercept + slope * goalDays, 0, 100);
+
+      let status;
+      if (avgValue > chart.goalValue) status = "mastered";
+      else if (predictedValue >= chart.goalValue) status = "sufficient";
+      else if (predictedValue >= chart.goalValue - 5) status = "minimal";
+      else status = "insufficient";
+
+      prediction = { slope, intercept, t0, predictedValue, avgValue, status, pointCount: n };
+    }
+  }
+  // The line always starts from whatever the current last entry is — recomputed fresh from
+  // `allPts` on every render, so deleting/editing the most recent point immediately changes
+  // where the dashed line picks up from (see the forced chart.update() effect below, which
+  // makes sure the canvas actually redraws rather than lagging a render behind).
+  const lastAllPt = allPts[allPts.length - 1];
+  const lastAllPtDate = lastAllPt ? parseChartDate(lastAllPt.x) : null;
+  const predictedLineDataset = prediction && lastAllPtDate && lastAllPtDate.getTime() <= goalChartDate.getTime()
+    ? {
+        label: "📈 Predicted",
+        data: [{ x: lastAllPtDate, y: lastAllPt.y }, { x: goalChartDate, y: prediction.predictedValue }],
+        borderColor: PREDICTION_META[prediction.status].border,
+        borderDash: [3, 3], borderWidth: 2, fill: false,
+        pointRadius: [0, 5], pointHoverRadius: [0, 7],
+        pointBackgroundColor: PREDICTION_META[prediction.status].border,
+      }
+    : null;
+
+  // Force an immediate canvas redraw whenever the data points feeding the predicted line change
+  // (a point added, edited, or deleted) — otherwise the dashed prediction line can visibly lag a
+  // render behind, still drawn from a point that was just removed, until something else happens
+  // to force the chart to redraw (same class of bug as the quarter-marker one above).
+  const predictionSignature = JSON.stringify({ pts: allPts.map(p => [p.x, p.y]), goalDate: chart?.goalDate, goalValue: chart?.goalValue });
+  useEffect(() => {
+    chartRef.current?.update();
+  }, [predictionSignature]);
+
   // Users can zoom/pan into a portion of the chart (see zoom plugin options below). The tick
   // generator below recomputes its spacing against whatever date range is *currently visible* —
   // daily for a short span, weekly for a several-month span, monthly for a multi-year span, etc.
@@ -342,6 +414,7 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
        pointBorderColor:pts.map(p=>p.notes?pal.chip:pal.chip),pointBorderWidth:pts.map(p=>p.notes?0:2),pointHitRadius:14},
       hasValidTargetDates && {label:"🎯 Target",data:[{x:startChartDate,y:chart.startValue},{x:goalChartDate,y:chart.goalValue}],
         borderColor:"#52c97a",borderDash:[6,4],borderWidth:2,fill:false,pointRadius:4,pointBackgroundColor:"#52c97a"},
+      predictedLineDataset,
     ].filter(Boolean),
   };
 
@@ -415,6 +488,23 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
               <div style={{fontSize:11,color:"var(--ink-soft)"}}>{sub}</div>
             </div>
           ))}
+        </div>
+      )}
+
+      {prediction&&(
+        <div className="fade-up" style={{background:theme.card,borderRadius:"var(--r-lg)",border:`2px solid ${theme.border}`,padding:"14px 18px",boxShadow:`0 8px 20px ${theme.shadow}`,display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+          <div style={{fontSize:26}}>{PREDICTION_META[prediction.status].emoji}</div>
+          <div style={{flex:1,minWidth:220}}>
+            <div style={{fontFamily:"var(--font-head)",fontWeight:800,fontSize:13,color:theme.text}}>
+              Predicted to reach {Math.round(prediction.predictedValue)}% by {chart.goalDate} (target: {chart.goalValue}%)
+            </div>
+            <div style={{fontSize:11,color:"var(--ink-soft)"}}>
+              Based on a trend line fit to the last {prediction.pointCount} {prediction.pointCount===1?"entry":"entries"} · average over that window: {Math.round(prediction.avgValue)}%
+            </div>
+          </div>
+          <span style={{padding:"6px 14px",borderRadius:999,fontSize:12,fontWeight:800,background:PREDICTION_META[prediction.status].bg,color:PREDICTION_META[prediction.status].color,border:`1.5px solid ${PREDICTION_META[prediction.status].border}`}}>
+            {PREDICTION_META[prediction.status].label}
+          </span>
         </div>
       )}
 
