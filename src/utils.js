@@ -9,8 +9,10 @@ const getEmoji = n => EMOJIS[(n?.charCodeAt(0)??0)%EMOJIS.length];
 const getStudentEmoji = student => student?.emoji?.trim() || getEmoji(student?.name ?? "");
 const clamp    = (v,lo,hi) => Math.max(lo,Math.min(hi,v));
 const sanitize = arr => (Array.isArray(arr)?arr:[]).map(p=>({...p,y:clamp(Number(p.y),0,100)})).sort((a,b)=>new Date(a.x)-new Date(b.x));
-const todayStr = () => new Date().toISOString().split("T")[0];
-// Attachments are scoped per-goal (chart.attachments) and the Accommodations tab has its own
+const todayStr = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};// Attachments are scoped per-goal (chart.attachments) and the Accommodations tab has its own
 // separate pool (student.accommodationAttachments) — a file uploaded to one goal, or to
 // Accommodations, doesn't show up anywhere else.
 // A prior version of this app pooled every goal's attachments into one shared, student-level
