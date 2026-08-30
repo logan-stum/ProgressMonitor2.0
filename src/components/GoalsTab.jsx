@@ -150,6 +150,28 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
     chartRef.current?.update();
   }, [quartersSignature]);
 
+  // Chart.js's automatic resize handling (via a ResizeObserver on the canvas's container) can
+  // occasionally catch the container mid-CSS-transition — e.g. while the quarterly-averages
+  // panel is collapsing/expanding (it animates over .2s), or during a window resize — and lock
+  // in a canvas pixel buffer that's very slightly out of sync with the container's final
+  // display size. The drift is only a few pixels, but that's proportionally much more visible
+  // on a narrower chart, which is exactly the "smaller graph → points/lines don't quite line up
+  // with their dates" symptom. Explicitly calling resize() once the container has settled
+  // corrects it.
+  useEffect(() => {
+    const t = setTimeout(() => chartRef.current?.resize(), 220);
+    return () => clearTimeout(t);
+  }, [quarterLogCollapsed]);
+  useEffect(() => {
+    let t;
+    const onWindowResize = () => {
+      clearTimeout(t);
+      t = setTimeout(() => chartRef.current?.resize(), 150);
+    };
+    window.addEventListener("resize", onWindowResize);
+    return () => { window.removeEventListener("resize", onWindowResize); clearTimeout(t); };
+  }, []);
+
 
   const handleEndQuarter = () => {
     if (!chart) return;
@@ -314,13 +336,18 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
   const hasValidTargetDates = Boolean(startChartDate && goalChartDate && startChartDate.getTime() <= goalChartDate.getTime());
 
   // ─── Prediction line ──────────────────────────────────────────────────────
-  // A least-squares linear regression fit to the student's most recent entries, extrapolated out
-  // to the goal's target date. Weighting to a recent window (rather than every entry ever logged)
-  // means a recent upswing or decline actually moves the prediction — an old run of high/low
-  // scores from months ago shouldn't keep dominating the trend forever. This is a genuine trend
-  // fit through actual data — distinct from the "🎯 Target" dataset above, which is just the
-  // straight baseline→goal reference line showing what "on pace" looks like, not what's happening.
-  const PREDICTION_WINDOW = 5;
+  // A weighted least-squares linear regression fit to EVERY logged entry, extrapolated out to
+  // the goal's target date — but the most recent RECENCY_WINDOW entries collectively carry
+  // RECENT_SHARE of the total weight, no matter how many older entries exist.
+  //
+  // This is a fixed *share* split, not a flat per-point multiplier. A flat multiplier (e.g. "each
+  // of the last 10 points counts 3x") doesn't actually guarantee recent data dominates: the older
+  // group's total weight grows with however many old points there are, so with enough history a
+  // long tail of old entries can still outvote a 3x-weighted recent window by sheer count. Fixing
+  // each group's *share* of the total (recent 10 = RECENT_SHARE, everything else = the rest)
+  // means the balance stays the same whether there are 15 entries or 150.
+  const RECENCY_WINDOW = 10;
+  const RECENT_SHARE = 0.8; // the most recent 10 points always carry 80% of the total weight
   const PREDICTION_META = {
     mastered:     { label:"Mastered",             emoji:"🏆", color:"#1a8a7a", bg:"#e8faf7", border:"#26c6b0" },
     sufficient:   { label:"Sufficient Progress",  emoji:"✅", color:"#1a8a5a", bg:"#edfdf5", border:"#52c97a" },
@@ -328,25 +355,38 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
     insufficient: { label:"Insufficient Progress",emoji:"❗", color:"#c0392b", bg:"#fff0f0", border:"#ff6b6b" },
   };
   let prediction = null;
-  const regressionPtsAll = allPts
+  const regressionPts = allPts
     .map(p => ({ t: parseChartDate(p.x)?.getTime(), y: p.y }))
     .filter(p => Number.isFinite(p.t));
-  const regressionPts = regressionPtsAll.slice(-PREDICTION_WINDOW);
   if (regressionPts.length >= 2 && goalChartDate && chart?.goalValue != null) {
     const n = regressionPts.length;
     const t0 = regressionPts[0].t;
-    const xs = regressionPts.map(p => (p.t - t0) / 86400000); // days since the window's first entry
+    const recentCutoffIndex = Math.max(0, n - RECENCY_WINDOW); // points at/after this index are "recent"
+    const recentCount = n - recentCutoffIndex;
+    const olderCount = recentCutoffIndex;
+    // Split RECENT_SHARE of the weight evenly across the recent points, and the rest evenly
+    // across everything older — if there's no older data, the recent window just gets it all.
+    const recentWeightEach = olderCount > 0 ? RECENT_SHARE / recentCount : 1;
+    const olderWeightEach = olderCount > 0 ? (1 - RECENT_SHARE) / olderCount : 0;
+    const xs = regressionPts.map(p => (p.t - t0) / 86400000); // days since the first entry ever logged
     const ys = regressionPts.map(p => p.y);
-    const sumX = xs.reduce((a, x) => a + x, 0);
-    const sumY = ys.reduce((a, y) => a + y, 0);
-    const sumXY = xs.reduce((a, x, i) => a + x * ys[i], 0);
-    const sumXX = xs.reduce((a, x) => a + x * x, 0);
-    const denom = n * sumXX - sumX * sumX;
-    const avgValue = sumY / n; // average of the same recent window, so a downward trend isn't
-                                // masked by a run of old high scores from months ago
+    const ws = regressionPts.map((_, i) => i >= recentCutoffIndex ? recentWeightEach : olderWeightEach);
+
+    const sumW = ws.reduce((a, w) => a + w, 0);
+    const sumWX = xs.reduce((a, x, i) => a + ws[i] * x, 0);
+    const sumWY = ys.reduce((a, y, i) => a + ws[i] * y, 0);
+    const sumWXY = xs.reduce((a, x, i) => a + ws[i] * x * ys[i], 0);
+    const sumWXX = xs.reduce((a, x, i) => a + ws[i] * x * x, 0);
+    const denom = sumW * sumWXX - sumWX * sumWX;
+    // Weighted average — the same recency weighting applied to the trend line also applies here,
+    // so "Mastered" reflects where the student actually is lately, not diluted by an old run of
+    // high (or low) scores from months ago.
+    const avgValue = sumWY / sumW;
+    const recentAvg = recentCount > 0 ? ys.slice(recentCutoffIndex).reduce((a, y) => a + y, 0) / recentCount : null;
+
     if (denom !== 0) {
-      const slope = (n * sumXY - sumX * sumY) / denom; // % change per day
-      const intercept = (sumY - slope * sumX) / n;
+      const slope = (sumW * sumWXY - sumWX * sumWY) / denom; // % change per day
+      const intercept = (sumWY - slope * sumWX) / sumW;
       const goalDays = (goalChartDate.getTime() - t0) / 86400000;
       const predictedValue = clamp(intercept + slope * goalDays, 0, 100);
 
@@ -356,7 +396,7 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
       else if (predictedValue >= chart.goalValue - 5) status = "minimal";
       else status = "insufficient";
 
-      prediction = { slope, intercept, t0, predictedValue, avgValue, status, pointCount: n };
+      prediction = { slope, intercept, t0, predictedValue, avgValue, recentAvg, status, pointCount: n, recentCount };
     }
   }
   // The line always starts from whatever the current last entry is — recomputed fresh from
@@ -399,8 +439,17 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
     for (const candidate of niceStepsDays) {
       if (totalDays / candidate <= maxTicks) { stepDays = candidate; break; }
     }
+    // Step by calendar days (via setDate) rather than a fixed `stepDays * DAY` millisecond
+    // increment — a flat millisecond step silently drifts by an hour across any daylight-saving
+    // transition inside the visible range, which nudges tick positions off their true calendar
+    // date. Small on its own, but it compounds with chart width to make ticks/points look
+    // increasingly "off" from where their date says they should be.
     const tickTimes = new Set([minTime, maxTime]);
-    for (let t = minTime; t <= maxTime; t += stepDays * DAY) tickTimes.add(t);
+    const cursor = new Date(minTime);
+    while (cursor.getTime() <= maxTime) {
+      tickTimes.add(cursor.getTime());
+      cursor.setDate(cursor.getDate() + stepDays);
+    }
     return Array.from(tickTimes).sort((a, b) => a - b);
   };
 
@@ -435,6 +484,13 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
     },
     scales:{
       x:{type:"time",time:{unit:"day",tooltipFormat:"MMM d, yyyy"},grid:{color:"rgba(0,0,0,0.04)"},
+         // Explicitly pin the axis's plotted range to the actual data extent (min/max), not to
+         // whichever tick values happen to be generated. Without this, some Chart.js scale
+         // configurations derive the plotted range from the tick set itself — so overriding
+         // ticks in afterBuildTicks below could, in principle, very slightly shift where the
+         // whole axis (and therefore every point on it) is anchored. Pinning it to 'data' means
+         // our custom ticks are purely cosmetic labels and can never nudge point placement.
+         bounds:"data",
          ticks:{color:"#9898b0",font:{family:"'Nunito Sans'",size:11},autoSkip:false,maxRotation:60,minRotation:0},
          afterBuildTicks: axis => {
            // axis.min/axis.max already reflect any active zoom/pan, so this regenerates ticks
@@ -499,7 +555,7 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
               Predicted to reach {Math.round(prediction.predictedValue)}% by {chart.goalDate} (target: {chart.goalValue}%)
             </div>
             <div style={{fontSize:11,color:"var(--ink-soft)"}}>
-              Based on a trend line fit to the last {prediction.pointCount} {prediction.pointCount===1?"entry":"entries"} · average over that window: {Math.round(prediction.avgValue)}%
+              Based on all {prediction.pointCount} logged {prediction.pointCount===1?"entry":"entries"} — the most recent {prediction.recentCount} carry 80% of the weight{prediction.recentAvg!=null?` (avg of those: ${Math.round(prediction.recentAvg)}%)`:""} · overall weighted average: {Math.round(prediction.avgValue)}%
             </div>
           </div>
           <span style={{padding:"6px 14px",borderRadius:999,fontSize:12,fontWeight:800,background:PREDICTION_META[prediction.status].bg,color:PREDICTION_META[prediction.status].color,border:`1.5px solid ${PREDICTION_META[prediction.status].border}`}}>
