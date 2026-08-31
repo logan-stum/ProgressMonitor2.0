@@ -555,10 +555,7 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
           <div style={{fontSize:26}}>{PREDICTION_META[prediction.status].emoji}</div>
           <div style={{flex:1,minWidth:220}}>
             <div style={{fontFamily:"var(--font-head)",fontWeight:800,fontSize:13,color:theme.text}}>
-              Predicted to reach {Math.round(prediction.predictedValue)}% by {chart.goalDate} (target: {chart.goalValue}%)
-            </div>
-            <div style={{fontSize:11,color:"var(--ink-soft)"}}>
-              Based on all {prediction.pointCount} logged {prediction.pointCount===1?"entry":"entries"} — the most recent {prediction.recentCount} carry 80% of the weight{prediction.recentAvg!=null?` (avg of those: ${Math.round(prediction.recentAvg)}%)`:""} · overall weighted average: {Math.round(prediction.avgValue)}%
+              Predicted to reach {prediction.predictedValue.toFixed(2)}% by {chart.goalDate} (target: {chart.goalValue}%)
             </div>
           </div>
           <span style={{padding:"6px 14px",borderRadius:999,fontSize:12,fontWeight:800,background:PREDICTION_META[prediction.status].bg,color:PREDICTION_META[prediction.status].color,border:`1.5px solid ${PREDICTION_META[prediction.status].border}`}}>
