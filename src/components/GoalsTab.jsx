@@ -408,7 +408,10 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
   const predictedLineDataset = prediction && lastAllPtDate && lastAllPtDate.getTime() <= goalChartDate.getTime()
     ? {
         label: "📈 Predicted",
-        data: [{ x: lastAllPtDate, y: lastAllPt.y }, { x: goalChartDate, y: prediction.predictedValue }],
+        // Plot the rounded value, not the raw regression output — classification (mastered/
+        // sufficient/etc.) still uses the precise number internally, but the dot on the chart
+        // and its tooltip should read "80%", not "79.77563%".
+        data: [{ x: lastAllPtDate, y: lastAllPt.y }, { x: goalChartDate, y: Math.round(prediction.predictedValue) }],
         borderColor: PREDICTION_META[prediction.status].border,
         borderDash: [3, 3], borderWidth: 2, fill: false,
         pointRadius: [0, 5], pointHoverRadius: [0, 7],
@@ -473,7 +476,7 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
       legend:{labels:{color:"#5a5a72",font:{family:"'Nunito',sans-serif",size:12,weight:"700"},boxWidth:14,padding:16}},
       tooltip:{backgroundColor:"#2d2d3a",titleColor:"#fff",bodyColor:"#9898b0",padding:12,cornerRadius:10,
         titleFont:{family:"'Nunito',sans-serif",weight:"800"},bodyFont:{family:"'Nunito Sans',sans-serif",size:12},
-        callbacks:{label:ctx=>` ${ctx.parsed.y}%${ctx.raw?.notes?`  · ${ctx.raw.notes}`:""}`}},
+        callbacks:{label:ctx=>` ${Math.round(ctx.parsed.y)}%${ctx.raw?.notes?`  · ${ctx.raw.notes}`:""}`}},
       chartBg:{goalVal:chart?.goalValue ?? 100},
       quarterLines:{quarters},
       zoom:{
