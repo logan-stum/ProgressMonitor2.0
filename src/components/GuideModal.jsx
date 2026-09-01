@@ -75,15 +75,6 @@ function GuideModal({show,onClose}){
       ["Ctrl+Z","Undo"],
       ["?  or  /","Show this guide"],
       ["Escape","Close any popup"],
-      ["Ctrl+Click","Delete chart point"],
-    ]},
-    {emoji:"💡",title:"Pro Tips",body:[
-      "💨 Press \"N\" while on a student page to log progress super fast",
-      "🔗 Bookmark student pages — the URL updates automatically",
-      "📊 Zoom the chart to see details, then \"Reset\" to see the big picture",
-      "📁 Use Groups to organize how you work (by class, by support type, etc.)",
-      "🖨️ Print before meetings with families — reports look professional",
-      "💾 Export your data monthly as a backup — it's your safety net",
     ]},
   ];
   return(
