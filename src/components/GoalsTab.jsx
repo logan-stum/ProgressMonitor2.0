@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Line } from "react-chartjs-2";
-import { clamp, sanitize, todayStr, getPal, burst, currentYear } from "../utils.js";
+import { clamp, sanitize, todayStr, getPal, burst, currentYear, calculateLinearRegression, projectGoalDate, growthPerWeek, growthPerDay, growthNeededPerWeek, getRegressionLinePoints } from "../utils.js";
 import SectionLabel from "./SectionLabel.jsx";
 import Modal from "./Modal.jsx";
 import Ring from "./Ring.jsx";
@@ -340,6 +340,25 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
          return absIndex===selectedPointIndex ? 8 : p.notes ? 7 : 5;
        }),pointHoverRadius:9,pointBackgroundColor:pts.map(p=>p.notes?pal.chip:"#fff"),
        pointBorderColor:pts.map(p=>p.notes?pal.chip:pal.chip),pointBorderWidth:pts.map(p=>p.notes?0:2),pointHitRadius:14},
+      // Regression trendline from actual data
+      pts.length >= 2 && (() => {
+        const regression = calculateLinearRegression(allPts);
+        if (!regression) return null;
+        const minDate = pts[0]?.x ? new Date(pts[0].x) : startChartDate;
+        const maxDate = pts[pts.length-1]?.x ? new Date(pts[pts.length-1].x) : goalChartDate;
+        if (!minDate || !maxDate) return null;
+        const regressionPoints = getRegressionLinePoints(allPts, minDate, maxDate);
+        return {
+          label:"📈 Data Trend",
+          data:regressionPoints,
+          borderColor:"#ff9f43",
+          borderDash:[3,3],
+          borderWidth:2,
+          fill:false,
+          pointRadius:0,
+          tension:0
+        };
+      })(),
       hasValidTargetDates && {label:"🎯 Target",data:[{x:startChartDate,y:chart.startValue},{x:goalChartDate,y:chart.goalValue}],
         borderColor:"#52c97a",borderDash:[6,4],borderWidth:2,fill:false,pointRadius:4,pointBackgroundColor:"#52c97a"},
     ].filter(Boolean),
@@ -399,6 +418,7 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
       </div>
 
       {latest&&(
+        <>
         <div className="fade-up" style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12}}>
           {[
             {label:"Latest Score",   val:`${latest.y}%`,                  sub:latest.x,                                                   color:pal.chip, pct:latest.y}, 
@@ -416,6 +436,59 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
             </div>
           ))}
         </div>
+        
+        {(() => {
+          const regression = calculateLinearRegression(allPts);
+          const weeklyGrowth = growthPerWeek(regression);
+          const dayGrowth = growthPerDay(regression);
+          const projectedDate = projectGoalDate(allPts, chart.goalValue);
+          const daysUntilGoal = chart.goalDate ? Math.ceil((new Date(chart.goalDate).getTime() - new Date().getTime()) / (24 * 60 * 60 * 1000)) : null;
+          const neededWeekly = growthNeededPerWeek(latest.y, chart.goalValue, daysUntilGoal);
+          const onPace = neededWeekly && weeklyGrowth ? weeklyGrowth >= (neededWeekly * 0.95) : null; // 95% buffer for variance
+          
+          return regression ? (
+            <div className="fade-up" style={{padding:"14px 16px",background:theme.card,borderRadius:"var(--r)",border:`1.5px solid ${theme.border}`}}>
+              <div style={{fontFamily:"var(--font-head)",fontWeight:800,fontSize:12,textTransform:"uppercase",letterSpacing:"0.07em",color:"var(--ink-soft)",marginBottom:10}}>📈 Pace Analysis</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:12}}>
+                <div style={{fontSize:11,color:"var(--ink-mid)"}}>
+                  <div style={{fontWeight:700,color:"var(--ink)"}}>Current Pace</div>
+                  <div style={{fontSize:13,fontWeight:800,color:pal.chip}}>{weeklyGrowth?.toFixed(2)}%</div>
+                  <div style={{fontSize:10,color:"var(--ink-soft)"}}>per week</div>
+                </div>
+                <div style={{fontSize:11,color:"var(--ink-mid)"}}>
+                  <div style={{fontWeight:700,color:"var(--ink)"}}>Needed Pace</div>
+                  <div style={{fontSize:13,fontWeight:800,color:neededWeekly>=weeklyGrowth?"#ff6b6b":"#52c97a"}}>{neededWeekly?.toFixed(2)}%</div>
+                  <div style={{fontSize:10,color:"var(--ink-soft)"}}>per week to goal</div>
+                </div>
+                <div style={{fontSize:11,color:"var(--ink-mid)"}}>
+                  <div style={{fontWeight:700,color:"var(--ink)"}}>On Track?</div>
+                  <div style={{fontSize:13,fontWeight:800,color:onPace?"#52c97a":"#ff6b6b"}}>{onPace?"✓ Yes":"⚠ No"}</div>
+                  <div style={{fontSize:10,color:"var(--ink-soft)"}}>to hit goal</div>
+                </div>
+                {projectedDate&&(
+                  <div style={{fontSize:11,color:"var(--ink-mid)"}}>
+                    <div style={{fontWeight:700,color:"var(--ink)"}}>Projected Arrival</div>
+                    <div style={{fontSize:13,fontWeight:800,color:pal.chip}}>{projectedDate.toLocaleDateString()}</div>
+                    <div style={{fontSize:10,color:"var(--ink-soft)"}}>at current pace</div>
+                  </div>
+                )}
+                <div style={{fontSize:11,color:"var(--ink-mid)"}}>
+                  <div style={{fontWeight:700,color:"var(--ink)"}}>Data Consistency</div>
+                  <div style={{fontSize:13,fontWeight:800,color:regression.consistency>75?"#52c97a":regression.consistency>50?"#ffd166":"#ff6b6b"}}>{regression.consistency.toFixed(0)}%</div>
+                  <div style={{fontSize:10,color:"var(--ink-soft)"}}>goodness of fit</div>
+                </div>
+                {daysUntilGoal!==null&&(
+                  <div style={{fontSize:11,color:"var(--ink-mid)"}}>
+                    <div style={{fontWeight:700,color:"var(--ink)"}}>Time Remaining</div>
+                    <div style={{fontSize:13,fontWeight:800,color:"var(--ink)"}}>{Math.max(0,daysUntilGoal)}</div>
+                    <div style={{fontSize:10,color:"var(--ink-soft)"}}>days until goal</div>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : null;
+        })()}
+        </>
       )}
 
       <div style={{display:"flex",gap:16,alignItems:"flex-start"}}>

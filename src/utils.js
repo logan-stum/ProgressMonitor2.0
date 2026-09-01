@@ -110,8 +110,100 @@ function getOnTrackValue(chart, atDateStr) {
 // Escapes a string for safe interpolation into print HTML.
 const escapeHtml = s => String(s ?? "").replace(/[&<>"']/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[ch]));
 
+// Linear regression: calculates best-fit line through data points.
+// Returns slope (per ms), intercept, R² (0-1, higher = better fit), and consistency % (0-100).
+function calculateLinearRegression(dataPoints) {
+  if (!Array.isArray(dataPoints) || dataPoints.length < 2) return null;
+  
+  const valid = dataPoints.filter(p => p && p.x && p.y != null);
+  if (valid.length < 2) return null;
+  
+  const xs = valid.map(p => new Date(p.x).getTime());
+  const ys = valid.map(p => Number(p.y));
+  const n = xs.length;
+  
+  const meanX = xs.reduce((a, b) => a + b, 0) / n;
+  const meanY = ys.reduce((a, b) => a + b, 0) / n;
+  
+  const numerator = xs.reduce((sum, x, i) => sum + (x - meanX) * (ys[i] - meanY), 0);
+  const denominator = xs.reduce((sum, x) => sum + (x - meanX) ** 2, 0);
+  
+  if (denominator === 0) return null;
+  
+  const slope = numerator / denominator;
+  const intercept = meanY - slope * meanX;
+  
+  // R² value (0-1, where 1 = perfect fit)
+  const residuals = ys.map((y, i) => y - (slope * xs[i] + intercept));
+  const ssRes = residuals.reduce((sum, r) => sum + r * r, 0);
+  const ssTot = ys.reduce((sum, y) => sum + (y - meanY) * (y - meanY), 0);
+  const r2 = ssTot === 0 ? 1 : 1 - (ssRes / ssTot);
+  
+  return {
+    slope,     // growth per millisecond
+    intercept, // y-intercept
+    r2,        // goodness of fit (0-1)
+    consistency: Math.max(0, Math.min(100, r2 * 100)), // 0-100 percentage
+  };
+}
+
+// Project when goal value will be reached at current regression pace.
+function projectGoalDate(dataPoints, goalValue) {
+  const regression = calculateLinearRegression(dataPoints);
+  if (!regression || regression.slope <= 0) return null;
+  
+  // Solve: goalValue = slope * t + intercept for t
+  const t = (goalValue - regression.intercept) / regression.slope;
+  const projectedTime = new Date(t);
+  
+  // Sanity check: don't project more than 5 years in future
+  const now = new Date();
+  const maxFuture = new Date(now.getTime() + 5 * 365 * 24 * 60 * 60 * 1000);
+  return projectedTime < maxFuture ? projectedTime : null;
+}
+
+// Calculate growth rate per week from regression slope.
+function growthPerWeek(regression) {
+  if (!regression) return null;
+  const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+  return regression.slope * WEEK_MS;
+}
+
+// Calculate growth rate per day from regression slope.
+function growthPerDay(regression) {
+  if (!regression) return null;
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  return regression.slope * DAY_MS;
+}
+
+// Calculate how much growth per week is needed to hit goal by target date.
+function growthNeededPerWeek(currentValue, goalValue, daysRemaining) {
+  if (daysRemaining <= 0) return null;
+  const weeksRemaining = daysRemaining / 7;
+  const gap = goalValue - currentValue;
+  return weeksRemaining > 0 ? gap / weeksRemaining : null;
+}
+
+// Get trendline points for rendering on chart.
+function getRegressionLinePoints(dataPoints, minDate, maxDate) {
+  const regression = calculateLinearRegression(dataPoints);
+  if (!regression) return null;
+  
+  const minTime = minDate.getTime();
+  const maxTime = maxDate.getTime();
+  
+  const y1 = regression.intercept + regression.slope * minTime;
+  const y2 = regression.intercept + regression.slope * maxTime;
+  
+  return [
+    { x: minDate, y: clamp(y1, 0, 100) },
+    { x: maxDate, y: clamp(y2, 0, 100) }
+  ];
+}
+
 export {
   getPal, getEmoji, getStudentEmoji, clamp, sanitize, todayStr,
   normalizeStudentAttachments, ensureStudentId, formatTime, currentYear, parseLocationHash, buildLocationHash,
   burst, parseISODate, getOnTrackValue, escapeHtml,
+  calculateLinearRegression, projectGoalDate, growthPerWeek, growthPerDay, growthNeededPerWeek, getRegressionLinePoints,
 };
