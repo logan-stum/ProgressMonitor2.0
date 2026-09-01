@@ -5,55 +5,85 @@ function GuideModal({show,onClose}){
   const [open,setOpen]=useState(0);
   const sections=[
     {emoji:"🏠",title:"Dashboard",body:[
-      "The Dashboard is the home screen — it lists every student grouped by whichever Groups you've set up, with each goal's latest progress at a glance.",
-      "Click a student's name (or a goal chip under them) to jump straight into that student's page.",
-      "Click a group header to collapse or expand that group.",
+      "👤 Click any student name to open their page",
+      "💬 Click a goal chip to jump to that goal's chart",
+      "📁 Click group headers to collapse/expand groups",
+      "🔍 Use filters at the top to search by name, accommodation, or group",
     ]},
-    {emoji:"🧑‍🎓",title:"Students & Groups",body:[
-      "Use \"+ Add Student\" in the Quick Tools panel (bottom-left) to create a new student — give them a name and pick an emoji to represent them.",
-      "\"+ Add Group\" lets you organize students into groups (e.g. by caseload, grade, or classroom) so the Dashboard and sidebar are easier to scan.",
-      "The left sidebar lists all students; click one to open their page, or use the search/collapse controls at the top of the sidebar.",
+    {emoji:"🧑‍🎓",title:"Adding Students",body:[
+      "📌 Press \"+ Add Student\" in Quick Tools (bottom-left)",
+      "✏️ Give them a name and pick an emoji",
+      "💡 Emojis help you spot students at a glance",
+      "🔄 Students stay organized even when you reorder or delete others",
     ]},
-    {emoji:"📊",title:"Goals tab",body:[
-      "Each student can have multiple goals. Use \"+ Add Goal\" to create one, giving it a name, a starting/baseline value, and a target/goal value.",
-      "Log a new data point with the ⚡ Quick Log button, or click directly on the chart.",
-      "Click any existing point on the chart to select it — a \"Delete selected\" button appears so you can remove it. Ctrl+click a point to delete it immediately without the extra step.",
-      "Scroll or pinch on the chart to zoom in, drag to pan, and use \"Reset zoom\" to snap back to the full view.",
-      "🏁 End Quarter draws a vertical line on the chart at today's date and averages every entry since the last quarter line (or the beginning, if there isn't one yet). That average is added to the Quarterly Averages log.",
-      "Hover any 🏁 flag on the chart to see that quarter's name, date, and average in a tooltip.",
-      "The Quarterly Averages panel sits beside the chart and can be collapsed to a thin strip on the right (click its header) so the chart can use the full width. Each entry can be renamed, have its percentage edited (✏️), or be deleted (🗑️).",
+    {emoji:"📁",title:"Groups & Organization",body:[
+      "📂 Use \"+ Add Group\" to organize students (by grade, class, caseload, etc.)",
+      "🎯 Makes the Dashboard and sidebar easier to navigate",
+      "🔀 Drag groups in the sidebar to reorder them",
+      "📋 Attendance Groups are separate — use them to track session attendance",
     ]},
-    {emoji:"🛠",title:"Accommodations tab",body:[
-      "Keep a running list of accommodations/modifications in place for the student. Add, edit, or remove entries from this tab.",
-      "This tab also has its own 📎 Files button for attachments related to accommodations (separate from each goal's own files).",
+    {emoji:"📊",title:"Goals & Tracking",body:[
+      "🎯 Create a goal: name + starting value + starting date + target value + target date",
+      "⚡ Log progress: click the chart or use \"⚡ Quick Log\" button (press \"N\" for speed)",
+      "📈 Charts show your data over time — zoom, pan, and reset view as needed",
+      "❌ Click a point to select it, then delete. Or Ctrl+click to delete instantly",
     ]},
-    {emoji:"⏱",title:"Minutes tab",body:[
-      "Log service minutes delivered to the student (e.g. therapy or intervention time), tagged with a label/service type.",
-      "Manage the list of available labels from \"⏱ Minutes Options\" in Quick Tools.",
+    {emoji:"🏁",title:"Quarterly Tracking",body:[
+      "📍 Press \"🏁 End Quarter\" to mark the end of a term",
+      "📊 It averages all entries since the last quarter and saves that average",
+      "📝 Click any quarter line to see the date and average",
+      "✏️ Rename quarterly records or edit percentages — the data stays the same",
     ]},
-    {emoji:"📎",title:"Files / Attachments",body:[
-      "Open the 📎 Files button (available on the Goals and Accommodations tabs) to upload files for that specific goal or for accommodations — files are kept separate per goal and per accommodations tab, not shared across everything.",
-      "\"⬇ Download All\" saves every file in that list to your computer one at a time.",
-      "\"🖨 Print All\" opens a separate print dialog for each file, one after another — images and PDFs are shown full-page; other file types show a placeholder page since browsers can't render them for printing.",
-      "Each file also has its own download (↓) and delete (🗑️) buttons.",
+    {emoji:"🛠",title:"Accommodations",body:[
+      "📝 Press \"+ Setup\" to create your accommodation list (e.g. \"Preferential Seating\")",
+      "📅 Click any day on the calendar to log what was given, refused, or N/A",
+      "💬 Add a note per day and explanations for N/A statuses",
+      "📊 See monthly totals at a glance — \"🖨 Print Calendar\" for reports",
     ]},
-    {emoji:"🖨",title:"Reports & Printing",body:[
-      "Click \"📄 Report\" (top of a student's page) to open the report modal.",
-      "\"🖨 Print\" prints the full report for that student — every goal, quarterly averages, accommodations, and minutes.",
-      "\"👪 Parent Print\" prints a short, single-goal handout for whichever goal is currently open: the goal's stats, a snapshot image of its chart (with quarter lines), and the quarterly averages log. Open the Goals tab first so the chart is on screen to capture.",
-      "For printing several students at once, use the class-wide bulk print option to select multiple students and print all their reports together.",
+    {emoji:"⏱",title:"Minutes & Services",body:[
+      "⏱️ Log service time: speech therapy, counseling, intervention, etc.",
+      "➕ Press \"⏱ Minutes Options\" to manage your service labels",
+      "📋 Use \"📋 Take Attendance\" for group sessions — tracks who attended and late arrivals",
+      "🖨️ Print attendance logs for parent communications",
     ]},
-    {emoji:"↕",title:"Import & Export",body:[
-      "\"↓ Export\" downloads all of your data (students, goals, accommodations, minutes, files, settings) as a single JSON file — use this as a backup or to move data to another device.",
-      "\"↑ Import\" loads a previously exported JSON file back in, restoring everything it contains.",
+    {emoji:"📎",title:"Files & Attachments",body:[
+      "📎 Click the Files button to upload documents, images, or PDFs",
+      "🎯 Files are saved to that specific goal — no mixing across students",
+      "🛡️ Accommodations tab has its own separate file storage",
+      "⬇️ Download one at a time, or \"⬇️ Download All\" to grab them quickly",
+    ]},
+    {emoji:"🖨",title:"Printing & Reports",body:[
+      "📄 Press \"📄 Report\" to see a summary of everything",
+      "🖨️ \"Print\" = full report with all goals, quarters, accommodations, and minutes",
+      "👪 \"Parent Print\" = single-page handout with goal progress (share with families)",
+      "📋 \"Bulk Report\" = print multiple students at once",
+    ]},
+    {emoji:"↕",title:"Backup & Restore",body:[
+      "↓ Press \"↓ Export\" to download all your data as a backup file",
+      "↑ Press \"↑ Import\" to restore from a backup or move to another device",
+      "💾 Everything is saved locally — nothing sent to the cloud",
+      "🔒 Back up regularly to keep your data safe",
+    ]},
+    {emoji:"🎨",title:"Themes & Appearance",body:[
+      "🌅 Pick a theme from the dashboard: Sunrise (default), Studio, or Night mode",
+      "🎯 Your preference is saved automatically",
+      "💡 Night mode is easier on eyes in dim lighting",
     ]},
     {emoji:"⌨",title:"Keyboard Shortcuts",body:null,shortcuts:[
-      ["N","Quick log a session (on student page)"],
+      ["N","Quick log (on student page)"],
       ["H","Go to Dashboard"],
-      ["Ctrl+Z","Undo last change"],
-      ["?  or  /","Toggle this guide"],
-      ["Escape","Close any open modal"],
-      ["Ctrl+click chart point","Delete that data point"],
+      ["Ctrl+Z","Undo"],
+      ["?  or  /","Show this guide"],
+      ["Escape","Close any popup"],
+      ["Ctrl+Click","Delete chart point"],
+    ]},
+    {emoji:"💡",title:"Pro Tips",body:[
+      "💨 Press \"N\" while on a student page to log progress super fast",
+      "🔗 Bookmark student pages — the URL updates automatically",
+      "📊 Zoom the chart to see details, then \"Reset\" to see the big picture",
+      "📁 Use Groups to organize how you work (by class, by support type, etc.)",
+      "🖨️ Print before meetings with families — reports look professional",
+      "💾 Export your data monthly as a backup — it's your safety net",
     ]},
   ];
   return(
