@@ -23,6 +23,7 @@ function AccommodationsTab({student,selSet,upd,theme,pal,onPrintCalendar}){
   const [editList,setEditList]=useState([]);
   const [newAccName,setNewAccName]=useState("");
   const [dayNoteDraft,setDayNoteDraft]=useState("");
+  const [dayDraftStatuses,setDayDraftStatuses]=useState({});
   const [naExplanationDrafts,setNaExplanationDrafts]=useState({});
 
   // Available years from data
@@ -32,15 +33,16 @@ function AccommodationsTab({student,selSet,upd,theme,pal,onPrintCalendar}){
 
   useEffect(()=>{if(accList.length===0)setShowSetup(true);},[selSet]);
 
-  // Sync the day-note / N/A-explanation drafts whenever a different day is opened, so edits to
-  // one day never leak into another.
+  // Sync the day drafts whenever a different day is opened, so edits to one day never leak
+  // into another. The modal is intentionally draft-based: nothing is saved until Done is clicked.
   useEffect(()=>{
     if(!showDayPop||!selDay) return;
     const rec=accDays[selDay]??{};
     setDayNoteDraft(rec._note??"");
+    setDayDraftStatuses(Object.fromEntries(accList.map(acc => [acc.id, rec[acc.id] ?? "given"])));
     setNaExplanationDrafts(rec._explanations??{});
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[selDay,showDayPop]);
+  },[selDay,showDayPop,accList]);
 
   const saveSetup=()=>{
     const items=setupList.filter(s=>s.trim()).map(name=>({id:Date.now()+Math.random(),name:name.trim()}));
@@ -48,29 +50,35 @@ function AccommodationsTab({student,selSet,upd,theme,pal,onPrintCalendar}){
     upd(d=>{d[selSet].accommodations=items;});
     setShowSetup(false);setSetupList([]);setSetupInput("");
   };
-  const openDay=ds=>{setSelDay(ds);setShowDayPop(true);};
-  const setStatus=(ds,accId,status)=>upd(d=>{
-    if(!d[selSet].accDays)d[selSet].accDays={};
-    if(!d[selSet].accDays[ds])d[selSet].accDays[ds]={};
-    d[selSet].accDays[ds][accId]=status;
-  });
-  const commitDayNote=()=>upd(d=>{
-    if(!d[selSet].accDays)d[selSet].accDays={};
-    if(!d[selSet].accDays[selDay])d[selSet].accDays[selDay]={};
-    if(dayNoteDraft.trim()) d[selSet].accDays[selDay]._note=dayNoteDraft.trim();
-    else delete d[selSet].accDays[selDay]._note;
-  });
-  const commitExplanation=(accId)=>upd(d=>{
-    if(!d[selSet].accDays)d[selSet].accDays={};
-    if(!d[selSet].accDays[selDay])d[selSet].accDays[selDay]={};
-    if(!d[selSet].accDays[selDay]._explanations)d[selSet].accDays[selDay]._explanations={};
-    const text=(naExplanationDrafts[accId]??"").trim();
-    if(text) d[selSet].accDays[selDay]._explanations[accId]=text;
-    else delete d[selSet].accDays[selDay]._explanations[accId];
-  });
-  const closeDayPop=()=>{
-    commitDayNote();
-    Object.keys(naExplanationDrafts).forEach(commitExplanation);
+  const openDay=ds=>{setSelDay(ds); setShowDayPop(true);};
+  const cancelDayPop=()=>{
+    setDayDraftStatuses({});
+    setNaExplanationDrafts({});
+    setDayNoteDraft("");
+    setShowDayPop(false);
+  };
+  const setStatus=(ds,accId,status)=>setDayDraftStatuses(prev => ({ ...prev, [accId]: status }));
+  const saveDayDraft=()=>{
+    if(!selDay) return;
+    upd(d=>{
+      if(!d[selSet].accDays)d[selSet].accDays={};
+      if(!d[selSet].accDays[selDay])d[selSet].accDays[selDay]={};
+      accList.forEach(acc => {
+        const status = dayDraftStatuses[acc.id] ?? "given";
+        d[selSet].accDays[selDay][acc.id] = status;
+      });
+      if(dayNoteDraft.trim()) d[selSet].accDays[selDay]._note = dayNoteDraft.trim();
+      else delete d[selSet].accDays[selDay]._note;
+      if(!d[selSet].accDays[selDay]._explanations) d[selSet].accDays[selDay]._explanations = {};
+      Object.keys(naExplanationDrafts).forEach(accId => {
+        const text=(naExplanationDrafts[accId]??"").trim();
+        if(text) d[selSet].accDays[selDay]._explanations[accId]=text;
+        else delete d[selSet].accDays[selDay]._explanations[accId];
+      });
+    });
+    setDayDraftStatuses({});
+    setNaExplanationDrafts({});
+    setDayNoteDraft("");
     setShowDayPop(false);
   };
   const openEdit=()=>{setEditList(accList.map(a=>({...a})));setShowEdit(true);};
@@ -224,7 +232,7 @@ function AccommodationsTab({student,selSet,upd,theme,pal,onPrintCalendar}){
         </div>
       </Modal>
 
-      <Modal show={showDayPop} onClose={closeDayPop}
+      <Modal show={showDayPop} onClose={cancelDayPop}
         title={selDay?new Date(selDay+"T12:00:00").toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric",year:"numeric"}):""}
         emoji="📅" wide>
         {accList.length===0?(
@@ -233,11 +241,11 @@ function AccommodationsTab({student,selSet,upd,theme,pal,onPrintCalendar}){
           <div style={{display:"flex",flexDirection:"column",gap:10}}>
             <div style={{background:"var(--cream)",borderRadius:10,padding:"12px 14px",border:"1.5px solid var(--border)"}}>
               <SectionLabel>Note for this day (optional)</SectionLabel>
-              <textarea rows={2} value={dayNoteDraft} onChange={e=>setDayNoteDraft(e.target.value)} onBlur={commitDayNote}
+              <textarea rows={2} value={dayNoteDraft} onChange={e=>setDayNoteDraft(e.target.value)}
                 placeholder="Any general note about accommodations today…" style={{width:"100%",fontSize:13,marginTop:6,resize:"vertical"}}/>
             </div>
             {accList.map(acc=>{
-              const status=dayData[acc.id]??"given";
+              const status = dayDraftStatuses[acc.id] ?? "given";
               return(
                 <div key={acc.id} style={{background:"var(--cream)",borderRadius:10,padding:"12px 14px",border:"1.5px solid var(--border)"}}>
                   <div style={{fontFamily:"var(--font-head)",fontWeight:700,fontSize:13,marginBottom:10}}>{acc.name}</div>
@@ -254,7 +262,6 @@ function AccommodationsTab({student,selSet,upd,theme,pal,onPrintCalendar}){
                       <SectionLabel>Why wasn't this required? (optional)</SectionLabel>
                       <textarea rows={2} value={naExplanationDrafts[acc.id]??""}
                         onChange={e=>setNaExplanationDrafts(p=>({...p,[acc.id]:e.target.value}))}
-                        onBlur={()=>commitExplanation(acc.id)}
                         placeholder="e.g. Student was on a field trip / activity didn't call for this accommodation"
                         style={{width:"100%",fontSize:12,marginTop:6,resize:"vertical"}}/>
                     </div>
@@ -263,7 +270,8 @@ function AccommodationsTab({student,selSet,upd,theme,pal,onPrintCalendar}){
               );
             })}
             <div style={{display:"flex",justifyContent:"flex-end",marginTop:6}}>
-              <button className="action-btn" onClick={closeDayPop} style={{background:"var(--teal)",color:"#fff"}}>Done ✓</button>
+              <button className="ghost-btn" onClick={cancelDayPop} style={{marginRight:8}}>Cancel</button>
+              <button className="action-btn" onClick={saveDayDraft} style={{background:"var(--teal)",color:"#fff"}}>Done ✓</button>
             </div>
           </div>
         )}
