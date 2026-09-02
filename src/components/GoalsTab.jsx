@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Line } from "react-chartjs-2";
-import { clamp, sanitize, todayStr, getPal, burst, currentYear, calculateLinearRegression, projectGoalDate, growthPerWeek, growthPerDay, growthNeededPerWeek, getRegressionLinePoints } from "../utils.js";
+import { clamp, sanitize, todayStr, getPal, burst, currentYear, calculateLinearRegression, projectGoalDate, growthPerWeek, growthNeededPerWeek, getRegressionLinePoints } from "../utils.js";
 import SectionLabel from "./SectionLabel.jsx";
 import Modal from "./Modal.jsx";
 import Ring from "./Ring.jsx";
@@ -340,13 +340,18 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
          return absIndex===selectedPointIndex ? 8 : p.notes ? 7 : 5;
        }),pointHoverRadius:9,pointBackgroundColor:pts.map(p=>p.notes?pal.chip:"#fff"),
        pointBorderColor:pts.map(p=>p.notes?pal.chip:pal.chip),pointBorderWidth:pts.map(p=>p.notes?0:2),pointHitRadius:14},
-      // Regression trendline from actual data
+      // Regression trendline from actual data. Extend to the goal date if one exists so the line
+      // keeps showing the teacher's projected trajectory all the way to the target milestone.
       pts.length >= 2 && (() => {
         const regression = calculateLinearRegression(allPts);
         if (!regression) return null;
-        const minDate = pts[0]?.x ? new Date(pts[0].x) : startChartDate;
-        const maxDate = pts[pts.length-1]?.x ? new Date(pts[pts.length-1].x) : goalChartDate;
-        if (!minDate || !maxDate) return null;
+
+        const actualMinDate = pts[0]?.x ? new Date(pts[0].x) : startChartDate;
+        const actualMaxDate = pts[pts.length - 1]?.x ? new Date(pts[pts.length - 1].x) : goalChartDate;
+        const minDate = startChartDate && (!actualMinDate || startChartDate < actualMinDate) ? startChartDate : actualMinDate;
+        const maxDate = goalChartDate && (!actualMaxDate || goalChartDate > actualMaxDate) ? goalChartDate : actualMaxDate;
+
+        if (!minDate || !maxDate || maxDate < minDate) return null;
         const regressionPoints = getRegressionLinePoints(allPts, minDate, maxDate);
         return {
           label:"📈 Data Trend",
@@ -440,12 +445,34 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
         {(() => {
           const regression = calculateLinearRegression(allPts);
           const weeklyGrowth = growthPerWeek(regression);
-          const dayGrowth = growthPerDay(regression);
           const projectedDate = projectGoalDate(allPts, chart.goalValue);
+          const recentAboveGoalCount = allPts.filter(p => Number(p.y) > Number(chart.goalValue ?? 0)).length;
+          const goalDateValue = chart.goalDate ? new Date(`${chart.goalDate}T12:00:00`) : null;
+          const projectedAtGoal = regression && goalDateValue && !Number.isNaN(goalDateValue.getTime())
+            ? regression.intercept + regression.slope * goalDateValue.getTime()
+            : null;
           const daysUntilGoal = chart.goalDate ? Math.ceil((new Date(chart.goalDate).getTime() - new Date().getTime()) / (24 * 60 * 60 * 1000)) : null;
-          const neededWeekly = growthNeededPerWeek(latest.y, chart.goalValue, daysUntilGoal);
-          const onPace = neededWeekly && weeklyGrowth ? weeklyGrowth >= (neededWeekly * 0.95) : null; // 95% buffer for variance
-          
+          const daysRemaining = Math.max(0, daysUntilGoal ?? 0);
+          const neededWeekly = chart.goalDate ? growthNeededPerWeek(latest.y, chart.goalValue, daysRemaining) : null;
+
+          let status = "Insufficient Progress";
+          let statusColor = "#ff6b6b";
+
+          if (recentAboveGoalCount >= 2 && projectedAtGoal != null && projectedAtGoal > chart.goalValue) {
+            status = "Mastered";
+            statusColor = "#52c97a";
+          } else if (projectedAtGoal != null && projectedAtGoal > chart.goalValue) {
+            status = "Sufficient Progress";
+            statusColor = "#52c97a";
+          } else if (projectedAtGoal != null && projectedAtGoal >= chart.goalValue - 5) {
+            status = "Minimal Progress";
+            statusColor = "#ffd166";
+          }
+
+          const statusText = status;
+          const neededLabel = neededWeekly == null ? "—" : `${neededWeekly.toFixed(2)}%`;
+          const projectedLabel = projectedDate ? projectedDate.toLocaleDateString() : "—";
+
           return regression ? (
             <div className="fade-up" style={{padding:"14px 16px",background:theme.card,borderRadius:"var(--r)",border:`1.5px solid ${theme.border}`}}>
               <div style={{fontFamily:"var(--font-head)",fontWeight:800,fontSize:12,textTransform:"uppercase",letterSpacing:"0.07em",color:"var(--ink-soft)",marginBottom:10}}>📈 Pace Analysis</div>
@@ -457,31 +484,19 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
                 </div>
                 <div style={{fontSize:11,color:"var(--ink-mid)"}}>
                   <div style={{fontWeight:700,color:"var(--ink)"}}>Needed Pace</div>
-                  <div style={{fontSize:13,fontWeight:800,color:neededWeekly>=weeklyGrowth?"#ff6b6b":"#52c97a"}}>{neededWeekly?.toFixed(2)}%</div>
+                  <div style={{fontSize:13,fontWeight:800,color:neededWeekly!=null&&weeklyGrowth!=null ? (neededWeekly >= weeklyGrowth ? "#ff6b6b" : "#52c97a") : "var(--ink)"}}>{neededLabel}</div>
                   <div style={{fontSize:10,color:"var(--ink-soft)"}}>per week to goal</div>
                 </div>
                 <div style={{fontSize:11,color:"var(--ink-mid)"}}>
-                  <div style={{fontWeight:700,color:"var(--ink)"}}>On Track?</div>
-                  <div style={{fontSize:13,fontWeight:800,color:onPace?"#52c97a":"#ff6b6b"}}>{onPace?"✓ Yes":"⚠ No"}</div>
-                  <div style={{fontSize:10,color:"var(--ink-soft)"}}>to hit goal</div>
+                  <div style={{fontWeight:700,color:"var(--ink)"}}>Progress Status</div>
+                  <div style={{fontSize:13,fontWeight:800,color:statusColor}}>{statusText}</div>
+                  <div style={{fontSize:10,color:"var(--ink-soft)"}}>based on trend</div>
                 </div>
                 {projectedDate&&(
                   <div style={{fontSize:11,color:"var(--ink-mid)"}}>
                     <div style={{fontWeight:700,color:"var(--ink)"}}>Projected Arrival</div>
-                    <div style={{fontSize:13,fontWeight:800,color:pal.chip}}>{projectedDate.toLocaleDateString()}</div>
+                    <div style={{fontSize:13,fontWeight:800,color:pal.chip}}>{projectedLabel}</div>
                     <div style={{fontSize:10,color:"var(--ink-soft)"}}>at current pace</div>
-                  </div>
-                )}
-                <div style={{fontSize:11,color:"var(--ink-mid)"}}>
-                  <div style={{fontWeight:700,color:"var(--ink)"}}>Data Consistency</div>
-                  <div style={{fontSize:13,fontWeight:800,color:regression.consistency>75?"#52c97a":regression.consistency>50?"#ffd166":"#ff6b6b"}}>{regression.consistency.toFixed(0)}%</div>
-                  <div style={{fontSize:10,color:"var(--ink-soft)"}}>goodness of fit</div>
-                </div>
-                {daysUntilGoal!==null&&(
-                  <div style={{fontSize:11,color:"var(--ink-mid)"}}>
-                    <div style={{fontWeight:700,color:"var(--ink)"}}>Time Remaining</div>
-                    <div style={{fontSize:13,fontWeight:800,color:"var(--ink)"}}>{Math.max(0,daysUntilGoal)}</div>
-                    <div style={{fontSize:10,color:"var(--ink-soft)"}}>days until goal</div>
                   </div>
                 )}
               </div>
