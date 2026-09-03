@@ -62,14 +62,37 @@ function TakeAttendanceModal({show,onClose,sets,attendanceGroups,onSubmit}){
           {attendanceGroups.length===0?(
             <div style={{textAlign:"center",padding:"16px 0",color:"var(--ink-soft)",fontSize:13}}>No attendance groups yet — create one first from "+ Attendance Group."</div>
           ):(
-            attendanceGroups.map(g=>(
-              <button key={g.id} className="ghost-btn" onClick={()=>setGroupId(g.id)} style={{justifyContent:"flex-start",padding:"12px 14px",fontSize:13}}>
-                <div>
-                  <div style={{fontWeight:800}}>{g.name}</div>
-                  <div style={{fontSize:11,color:"var(--ink-soft)",fontWeight:500}}>{(g.studentIds??[]).length} student{(g.studentIds??[]).length!==1?"s":""}</div>
-                </div>
-              </button>
-            ))
+            <>
+              <div style={{fontSize:12,color:"var(--ink-soft)",paddingBottom:2}}>Select a group to take attendance for today.</div>
+              {attendanceGroups.map(g=>{
+                const today=todayStr();
+                const groupSids=new Set(g.studentIds??[]);
+                const takenToday=sets.some(s=>
+                  groupSids.has(s.sid) &&
+                  (s.minutes??[]).some(m=>m.kind==="attendance"&&m.groupId===g.id&&m.date===today)
+                );
+                return(
+                  <button key={g.id} className="ghost-btn" onClick={()=>setGroupId(g.id)}
+                    style={{justifyContent:"space-between",padding:"12px 14px",fontSize:13,
+                      borderColor: takenToday ? "rgba(82,201,122,0.6)" : "rgba(255,107,107,0.5)",
+                      background: takenToday ? "rgba(82,201,122,0.07)" : "rgba(255,107,107,0.05)",
+                    }}>
+                    <div style={{textAlign:"left"}}>
+                      <div style={{fontWeight:800}}>{g.name}</div>
+                      <div style={{fontSize:11,color:"var(--ink-soft)",fontWeight:500,marginTop:2}}>
+                        {(g.studentIds??[]).length} student{(g.studentIds??[]).length!==1?"s":""}
+                        {(g.times??[]).length>0&&` · ${g.times[0].start}–${g.times[0].stop}`}
+                      </div>
+                    </div>
+                    {takenToday ? (
+                      <span style={{fontSize:11,fontWeight:800,color:"#1e7a45",background:"#edfdf5",border:"1.5px solid #52c97a66",borderRadius:999,padding:"3px 10px",flexShrink:0}}>✓ Done today</span>
+                    ) : (
+                      <span style={{fontSize:11,fontWeight:800,color:"#c0392b",background:"#fff0f0",border:"1.5px solid #ff6b6b66",borderRadius:999,padding:"3px 10px",flexShrink:0}}>⚠ Not taken</span>
+                    )}
+                  </button>
+                );
+              })}
+            </>
           )}
         </div>
       ):(
