@@ -58,6 +58,16 @@ function GuideModal({show,onClose}){
       "👪 \"Parent Print\" = single-page handout with goal progress (share with families)",
       "📋 \"Bulk Report\" = print multiple students at once",
     ]},
+    {emoji:"🔎",title:"Evidence & Notes",body:[
+      "🔎 Use \"Search Evidence\" in Quick Tools to search notes across all students",
+      "📝 Searches goal notes, progress notes, attendance notes, late reasons, and accommodation notes",
+      "👆 Click a result to open the student and goal where it was recorded",
+    ]},
+    {emoji:"📋",title:"Student Snapshot",body:[
+      "📋 Press \"Snapshot\" on a student page for a meeting-ready overview",
+      "📊 See goals on track, at risk, or mastered, plus service minutes",
+      "📅 Review attendance, accommodation compliance, last activity, and goal entry counts",
+    ]},
     {emoji:"↕",title:"Backup & Restore",body:[
       "↓ Press \"↓ Export\" to download all your data as a backup file",
       "↑ Press \"↑ Import\" to restore from a backup or move to another device",

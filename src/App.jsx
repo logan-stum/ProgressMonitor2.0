@@ -23,6 +23,8 @@ import MinutesTab from "./components/MinutesTab.jsx";
 import ReportModal from "./components/ReportModal.jsx";
 import AttendanceGroupsModal from "./components/AttendanceGroupsModal.jsx";
 import TakeAttendanceModal from "./components/TakeAttendanceModal.jsx";
+import EvidenceSearchModal from "./components/EvidenceSearchModal.jsx";
+import StudentScorecard from "./components/StudentScorecard.jsx";
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, TimeScale, Filler, zoomPlugin);
 
@@ -171,6 +173,8 @@ export default function App(){
   });
   const [showAttGroups,setShowAttGroups]=useState(false);
   const [showTakeAttendance,setShowTakeAttendance]=useState(false);
+  const [showEvidenceSearch,setShowEvidenceSearch]=useState(false);
+  const [showScorecard,setShowScorecard]=useState(false);
   const [minuteOptions,setMinuteOptions]=useState(()=>{
     try{
       const s=localStorage.getItem("pm_minute_options");
@@ -911,6 +915,7 @@ export default function App(){
     setRenameEmoji("");
   };
   const handleSelectStudent=(si,ci=0)=>{setSelSet(si);setSelChart(ci);setActiveTab("goals");setView("student");};
+  const openEvidenceStudent=(si,ci=0)=>{setSelSet(si);setSelChart(ci);setActiveTab("goals");setView("student");};
   const toggleSidebarGroup = key => setSidebarGroupCollapsed(prev => ({ ...prev, [key]: !prev[key] }));
   const sidebarSections = [
     ...groups.map(group => ({ id: group.id, name: group.name, students: sets.filter(student => student.groupId === group.id) })),
@@ -1078,6 +1083,7 @@ export default function App(){
                 <label className="ghost-btn" style={{flex:1,justifyContent:"center",cursor:"pointer"}}>↑ Import<input type="file" accept=".json" onChange={importJSON} style={{display:"none"}}/></label>
               </div>
               <button className="ghost-btn" onClick={()=>setShowGuide(true)} style={{justifyContent:"center",fontSize:11}}>📘 Guide</button>
+              <button className="ghost-btn" onClick={()=>setShowEvidenceSearch(true)} style={{justifyContent:"center",fontSize:11}}>🔎 Search Evidence</button>
             </div>
           )}
         </div>
@@ -1113,6 +1119,7 @@ export default function App(){
             theme={theme}
             setTheme={setThemeKey}
           />
+
         ):student?(
           <>
             {/* Topbar */}
@@ -1139,6 +1146,7 @@ export default function App(){
                   {activeTab==="goals"&&<button className="ghost-btn" onClick={undo} disabled={!history.length} style={{color:theme.text, borderColor: theme.border, background: theme.card}}>↩ Undo</button>}
                   {(activeTab==="goals"||activeTab==="accommodations")&&<button className="ghost-btn" onClick={()=>setShowAtt(true)} style={{color:theme.text, borderColor: theme.border, background: theme.card}}>📎 Files</button>}
                   <button className="ghost-btn" onClick={()=>setShowReport(true)} style={{color:theme.text, borderColor: theme.border, background: theme.card}}>📄 Report</button>
+                      <button className="ghost-btn" onClick={()=>setShowScorecard(true)} style={{color:theme.text, borderColor: theme.border, background: theme.card}}>📋 Snapshot</button>
                 </div>
               </div>
               <div style={{display:"flex",gap:4,paddingBottom:12,flexWrap:"wrap"}}>
@@ -1167,6 +1175,18 @@ export default function App(){
           </div>
         )}
       </div>
+
+      <EvidenceSearchModal
+        show={showEvidenceSearch}
+        onClose={()=>setShowEvidenceSearch(false)}
+        sets={sets}
+        onOpenStudent={openEvidenceStudent}
+      />
+      <StudentScorecard
+        show={showScorecard}
+        onClose={()=>setShowScorecard(false)}
+        student={student}
+      />
 
       {/* MODALS */}
       <Modal show={showAS} onClose={()=>setShowAS(false)} title="Add Student" emoji="🎒">
