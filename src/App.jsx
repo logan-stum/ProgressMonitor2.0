@@ -377,7 +377,7 @@ export default function App(){
       return `
         <div class="quarter-row" style="flex-direction:column;align-items:flex-start;gap:2px">
           <div style="display:flex;justify-content:space-between;width:100%">
-            <span class="quarter-date">${escapeHtml(e.date)} — ${escapeHtml(e.groupName)}${timeLabel}</span>
+            <span class="quarter-date">${escapeHtml(e.date)} — ${escapeHtml(e.title || e.groupName)}${timeLabel}</span>
             <span class="quarter-avg" style="color:${cfg.color}">${cfg.icon} ${cfg.label}</span>
           </div>
           ${notesHtml ? `<div style="font-size:11px;color:#6b6b7d">${notesHtml}</div>` : ""}

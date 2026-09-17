@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { ATTENDANCE_STATUS } from "../constants.js";
-import { formatTime } from "../utils.js";
+import { formatTime, todayStr } from "../utils.js";
 import SectionLabel from "./SectionLabel.jsx";
 import DateRangePrintModal from "./DateRangePrintModal.jsx";
 import Modal from "./Modal.jsx";
@@ -10,6 +10,7 @@ function MinutesTab({student, selSet, upd, minuteOptions, requestConfirm, theme,
   const [minutesValue,setMinutesValue]=useState("30");
   const [editingId,setEditingId]=useState(null);
   const [editingAttendance,setEditingAttendance]=useState(null);
+  const [newAttendance,setNewAttendance]=useState(null);
   const [attGroupFilter,setAttGroupFilter]=useState("all");
   const [showPrintRange,setShowPrintRange]=useState(false);
 
@@ -111,6 +112,35 @@ function MinutesTab({student, selSet, upd, minuteOptions, requestConfirm, theme,
     });
 
     setEditingAttendance(null);
+  };
+
+  const openManualAttendance = () => {
+    setNewAttendance({
+      id: `att-${Date.now()}-${Math.random().toString(16).slice(2,8)}`,
+      date: todayStr(),
+      status: "attended",
+      start: "",
+      stop: "",
+      lateReason: "",
+      sessionNote: "",
+      title: "",
+    });
+  };
+
+  const saveManualAttendance = fields => {
+    if (!newAttendance || !fields.title?.trim()) return;
+    upd(d => {
+      if (!Array.isArray(d[selSet].minutes)) d[selSet].minutes = [];
+      d[selSet].minutes.push({
+        ...fields,
+        id: newAttendance.id,
+        kind: "attendance",
+        groupId: null,
+        groupName: "Manual",
+        title: fields.title.trim(),
+      });
+    });
+    setNewAttendance(null);
   };
 
   const startEdit=(entry)=>{
@@ -392,6 +422,14 @@ function MinutesTab({student, selSet, upd, minuteOptions, requestConfirm, theme,
               </select>
             )}
 
+            <button
+              className="ghost-btn"
+              onClick={openManualAttendance}
+              style={{padding:"5px 12px",fontSize:12}}
+            >
+              + Add Attendance
+            </button>
+
             {visibleAttendance.length>0 && (
               <button
                 className="ghost-btn"
@@ -478,7 +516,7 @@ function MinutesTab({student, selSet, upd, minuteOptions, requestConfirm, theme,
                       textOverflow:"ellipsis",
                       whiteSpace:"nowrap"
                     }}>
-                      {entry.groupName}
+                      {entry.title || entry.groupName}
                     </div>
 
                     {entry.start && (
@@ -604,6 +642,22 @@ function MinutesTab({student, selSet, upd, minuteOptions, requestConfirm, theme,
 
       </Modal>
 
+      <Modal
+        show={!!newAttendance}
+        onClose={()=>setNewAttendance(null)}
+        title="Add Attendance"
+        emoji="➕"
+      >
+        {newAttendance && (
+          <EditAttendanceForm
+            entry={newAttendance}
+            isNew
+            onCancel={()=>setNewAttendance(null)}
+            onSave={saveManualAttendance}
+          />
+        )}
+      </Modal>
+
     </div>
   );
 }
@@ -615,7 +669,7 @@ function MinutesTab({student, selSet, upd, minuteOptions, requestConfirm, theme,
  * This is intentionally kept in the same file rather than creating
  * a separate EditAttendanceModal.jsx file.
  */
-function EditAttendanceForm({entry,onCancel,onSave}){
+function EditAttendanceForm({entry,onCancel,onSave,isNew=false}){
 
   const [date,setDate]=useState(entry.date ?? "");
   const [start,setStart]=useState(entry.start ?? "");
@@ -626,6 +680,7 @@ function EditAttendanceForm({entry,onCancel,onSave}){
   );
   const [lateReason,setLateReason]=useState(entry.lateReason ?? "");
   const [sessionNote,setSessionNote]=useState(entry.sessionNote ?? "");
+  const [title,setTitle]=useState(entry.title ?? "");
 
   /*
    * Keep the form synchronized if a different attendance entry
@@ -641,6 +696,7 @@ function EditAttendanceForm({entry,onCancel,onSave}){
     );
     setLateReason(entry.lateReason ?? "");
     setSessionNote(entry.sessionNote ?? "");
+    setTitle(entry.title ?? "");
   },[entry]);
 
   const handleStatusChange=(newStatus)=>{
@@ -671,7 +727,8 @@ function EditAttendanceForm({entry,onCancel,onSave}){
     let updatedFields={
       date:date || entry.date || null,
       status,
-      sessionNote:sessionNote.trim() || null
+      sessionNote:sessionNote.trim() || null,
+      title:title.trim() || null,
     };
 
     if(status==="absent"){
@@ -710,6 +767,23 @@ function EditAttendanceForm({entry,onCancel,onSave}){
     }}>
 
       {/* Date */}
+
+      <div>
+        {isNew && (
+          <>
+            <SectionLabel>Attendance title</SectionLabel>
+            <input
+              type="text"
+              value={title}
+              onChange={e=>setTitle(e.target.value)}
+              placeholder="e.g. Reading group"
+              style={{width:"100%"}}
+              autoFocus
+            />
+          </>
+        )}
+      </div>
+
 
       <div>
         <SectionLabel>Date</SectionLabel>
@@ -894,7 +968,7 @@ function EditAttendanceForm({entry,onCancel,onSave}){
             color:"#2d2d3a"
           }}
         >
-          Save Changes ✓
+          {isNew ? "Add Attendance ✓" : "Save Changes ✓"}
         </button>
       </div>
 
