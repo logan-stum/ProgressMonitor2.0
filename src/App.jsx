@@ -20,6 +20,7 @@ import Dashboard from "./components/Dashboard.jsx";
 import GoalsTab from "./components/GoalsTab.jsx";
 import AccommodationsTab from "./components/AccommodationsTab.jsx";
 import MinutesTab from "./components/MinutesTab.jsx";
+import TestingTab from "./components/TestingTab.jsx";
 import ReportModal from "./components/ReportModal.jsx";
 import AttendanceGroupsModal from "./components/AttendanceGroupsModal.jsx";
 import TakeAttendanceModal from "./components/TakeAttendanceModal.jsx";
@@ -38,6 +39,7 @@ export default function App(){
         accommodations: Array.isArray(student.accommodations) ? student.accommodations : [],
         accDays: student.accDays ?? {},
         minutes: Array.isArray(student.minutes) ? student.minutes : [],
+        testing: Array.isArray(student.testing) ? student.testing : [],
         charts: Array.isArray(student.charts) ? student.charts : [],
       }))) : [];
     } catch { return []; }
@@ -281,7 +283,7 @@ export default function App(){
     if(!newSName.trim()) return;
     const name = newSName.trim();
     const emoji = (newSEmoji.trim() || getStudentEmoji({ name })).slice(0, 2);
-    upd(d => d.push(ensureStudentId({ name, emoji, groupId: "", collapsed: false, accommodations: [], accDays: {}, minutes: [], accommodationAttachments: [], charts: [] })));
+    upd(d => d.push(ensureStudentId({ name, emoji, groupId: "", collapsed: false, accommodations: [], accDays: {}, minutes: [], testing: [], accommodationAttachments: [], charts: [] })));
     setSelSet(sets.length);setSelChart(0);setActiveTab("goals");setView("student");setNewSName("");setNewSEmoji("");setShowAS(false);
   };
   const addGoal=()=>{
@@ -1145,6 +1147,7 @@ export default function App(){
                 <button className={`tab-btn${activeTab==="goals"?" active":""}`} onClick={()=>setActiveTab("goals")} style={{background: activeTab === "goals" ? theme.card : "transparent", borderColor: theme.border, color: theme.text}}>📊 Goals</button>
                 <button className={`tab-btn${activeTab==="accommodations"?" active":""}`} onClick={()=>setActiveTab("accommodations")} style={{background: activeTab === "accommodations" ? theme.card : "transparent", borderColor: theme.border, color: theme.text}}>🛠 Accommodations</button>
                 <button className={`tab-btn${activeTab==="minutes"?" active":""}`} onClick={()=>setActiveTab("minutes")} style={{background: activeTab === "minutes" ? theme.card : "transparent", borderColor: theme.border, color: theme.text}}>⏱ Minutes</button>
+                <button className={`tab-btn${activeTab==="testing"?" active":""}`} onClick={()=>setActiveTab("testing")} style={{background: activeTab === "testing" ? theme.card : "transparent", borderColor: theme.border, color: theme.text}}>📝 Testing</button>
               </div>
             </div>
 
@@ -1152,6 +1155,8 @@ export default function App(){
               <AccommodationsTab student={student} selSet={selSet} upd={upd} theme={theme} pal={pal} onPrintCalendar={printAccommodationsCalendar}/>
             ):activeTab==="minutes"?(
               <MinutesTab student={student} selSet={selSet} upd={upd} minuteOptions={minuteOptions} requestConfirm={requestConfirm} theme={theme} pal={pal} onPrintAttendance={printAttendanceLog}/>
+            ):activeTab==="testing"?(
+              <TestingTab student={student} selSet={selSet} upd={upd} theme={theme}/>
             ):(
               <GoalsTab sets={sets} selSet={selSet} selChart={selChart} setSelChart={setSelChart}
                 upd={upd} snap={snap} undo={undo} history={history}
