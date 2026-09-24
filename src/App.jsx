@@ -21,6 +21,7 @@ import GoalsTab from "./components/GoalsTab.jsx";
 import AccommodationsTab from "./components/AccommodationsTab.jsx";
 import MinutesTab from "./components/MinutesTab.jsx";
 import TestingTab from "./components/TestingTab.jsx";
+import ArchiveTab from "./components/ArchiveTab.jsx";
 import ReportModal from "./components/ReportModal.jsx";
 import AttendanceGroupsModal from "./components/AttendanceGroupsModal.jsx";
 import TakeAttendanceModal from "./components/TakeAttendanceModal.jsx";
@@ -41,6 +42,7 @@ export default function App(){
         minutes: Array.isArray(student.minutes) ? student.minutes : [],
         testing: Array.isArray(student.testing) ? student.testing : [],
         charts: Array.isArray(student.charts) ? student.charts : [],
+        archives: Array.isArray(student.archives) ? student.archives : [],
       }))) : [];
     } catch { return []; }
   });
@@ -304,6 +306,42 @@ export default function App(){
       d[studentIndex].groupId = groupId || "";
     });
   };
+  const archiveStudent = () => {
+    if (!student) return;
+    requestConfirm({
+      title: `Archive ${student.name}?`,
+      message: "This saves the student's current goals, progress, accommodations, minutes, testing, and files as a read-only archive, then starts a blank progress period.",
+      confirmLabel: "Archive Student",
+      danger: true,
+      onConfirm: async () => {
+        const { archives: existingArchives, ...currentData } = student;
+        const snapshot = JSON.parse(JSON.stringify(currentData));
+        snapshot.charts = await Promise.all((snapshot.charts ?? []).map(async (chart) => ({
+          ...chart,
+          chartImage: await renderGoalChartImage(chart, pal),
+        })));
+        const archive = {
+          id: `archive-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+          archivedAt: new Date().toISOString(),
+          snapshot,
+        };
+        upd(data => {
+          const current = data[selSet];
+          data[selSet] = {
+            ...current,
+            accommodations: [],
+            accDays: {},
+            minutes: [],
+            testing: [],
+            accommodationAttachments: [],
+            charts: [],
+            archives: [...(Array.isArray(existingArchives) ? existingArchives : []), archive],
+          };
+        });
+        setActiveTab("archive");
+      },
+    });
+  };
   const reorderGroups=(draggedId,targetId)=>{
     if (!draggedId || !targetId || draggedId === targetId) return;
     setGroups(prev => {
@@ -493,7 +531,7 @@ export default function App(){
     setMinuteOptions(prev=>prev.filter(opt=>opt.id!==id));
   };
   const exportJSON=()=>{
-    const payload={version:1,groups,students:sets,minuteOptions,attendanceGroups};
+    const payload={version:2,groups,students:sets,minuteOptions,attendanceGroups,themeKey};
     const a=document.createElement("a");
     a.href=URL.createObjectURL(new Blob([JSON.stringify(payload,null,2)],{type:"application/json"}));
     a.download="progress-data.json";a.click();
@@ -610,8 +648,9 @@ export default function App(){
       const bgPlugin = {
         id: "chartBgStatic",
         beforeDraw(ch) {
-          const { ctx, chartArea: { top, bottom, left, right }, scales: { y } } = ch;
-          if (!y) return;
+          const { ctx, chartArea, scales: { y } } = ch;
+          if (!y || !chartArea) return;
+          const { top, bottom, left, right } = chartArea;
           const zones = [
             { from: goalVal, to: 100, color: "rgba(82,201,122,0.08)" },
             { from: goalVal * 0.7, to: goalVal, color: "rgba(255,209,102,0.08)" },
@@ -877,6 +916,8 @@ export default function App(){
         accDays: student.accDays ?? {},
         minutes: Array.isArray(student.minutes) ? student.minutes : [],
         charts: Array.isArray(student.charts) ? student.charts : [],
+        testing: Array.isArray(student.testing) ? student.testing : [],
+        archives: Array.isArray(student.archives) ? student.archives : [],
         groupId: student.groupId ?? "",
       })));
       setSets(normalizedSets);
@@ -884,6 +925,7 @@ export default function App(){
       if (d && Array.isArray(d.attendanceGroups)) setAttendanceGroups(d.attendanceGroups);
       const importedMinuteOptions = Array.isArray(d?.minuteOptions) ? d.minuteOptions : (Array.isArray(d?.options) ? d.options : DEFAULT_MINUTE_OPTIONS);
       setMinuteOptions(importedMinuteOptions.length ? importedMinuteOptions : DEFAULT_MINUTE_OPTIONS);
+      if (d && dashboardThemes[d.themeKey]) setThemeKey(d.themeKey);
       setSelSet(0); setSelChart(0); setView("dashboard");
     }catch{alert("Couldn't read that file");}};
     r.readAsText(f);
@@ -1141,6 +1183,7 @@ export default function App(){
                   {activeTab==="goals"&&<button className="ghost-btn" onClick={undo} disabled={!history.length} style={{color:theme.text, borderColor: theme.border, background: theme.card}}>↩ Undo</button>}
                   {(activeTab==="goals"||activeTab==="accommodations")&&<button className="ghost-btn" onClick={()=>setShowAtt(true)} style={{color:theme.text, borderColor: theme.border, background: theme.card}}>📎 Files</button>}
                   <button className="ghost-btn" onClick={()=>setShowReport(true)} style={{color:theme.text, borderColor: theme.border, background: theme.card}}>📄 Report</button>
+                  <button className="ghost-btn" onClick={archiveStudent} style={{color:"#8f3f32", borderColor:"rgba(255,107,107,0.55)", background:"rgba(255,107,107,0.08)", fontWeight:800}}>🗄 Archive Current Period</button>
                 </div>
               </div>
               <div style={{display:"flex",gap:4,paddingBottom:12,flexWrap:"wrap"}}>
@@ -1148,6 +1191,7 @@ export default function App(){
                 <button className={`tab-btn${activeTab==="accommodations"?" active":""}`} onClick={()=>setActiveTab("accommodations")} style={{background: activeTab === "accommodations" ? theme.card : "transparent", borderColor: theme.border, color: theme.text}}>🛠 Accommodations</button>
                 <button className={`tab-btn${activeTab==="minutes"?" active":""}`} onClick={()=>setActiveTab("minutes")} style={{background: activeTab === "minutes" ? theme.card : "transparent", borderColor: theme.border, color: theme.text}}>⏱ Minutes</button>
                 <button className={`tab-btn${activeTab==="testing"?" active":""}`} onClick={()=>setActiveTab("testing")} style={{background: activeTab === "testing" ? theme.card : "transparent", borderColor: theme.border, color: theme.text}}>📝 Testing</button>
+                <button className={`tab-btn${activeTab==="archive"?" active":""}`} onClick={()=>setActiveTab("archive")} style={{background: activeTab === "archive" ? theme.card : "transparent", borderColor: theme.border, color: theme.text}}>🗄 Archive History</button>
               </div>
             </div>
 
@@ -1157,6 +1201,8 @@ export default function App(){
               <MinutesTab student={student} selSet={selSet} upd={upd} minuteOptions={minuteOptions} requestConfirm={requestConfirm} theme={theme} pal={pal} onPrintAttendance={printAttendanceLog}/>
             ):activeTab==="testing"?(
               <TestingTab student={student} selSet={selSet} upd={upd} theme={theme}/>
+            ):activeTab==="archive"?(
+              <ArchiveTab student={student} theme={theme} pal={pal} onRenderChart={renderGoalChartImage} onPrint={(html, title) => printHtmlDocument(html, title)}/>
             ):(
               <GoalsTab sets={sets} selSet={selSet} selChart={selChart} setSelChart={setSelChart}
                 upd={upd} snap={snap} undo={undo} history={history}
