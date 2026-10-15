@@ -833,67 +833,7 @@ export default function App(){
     printNext();
   };
   const printStudentReport = () => {
-    const student = sets[selSet];
-    if (!student) return;
-
-    const today = new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
-    const minuteEntries = Array.isArray(student.minutes) ? student.minutes : [];
-    const totalMinutes = minuteEntries.reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
-    const minuteSummary = Object.entries(minuteEntries.reduce((acc, entry) => {
-      const label = entry.label || "Other";
-      acc[label] = (acc[label] || 0) + Number(entry.amount || 0);
-      return acc;
-    }, {}));
-
-    const goalMarkup = (student.charts ?? []).map((c) => {
-      const pts = c.data ?? [];
-      const latest = pts[pts.length - 1];
-      return `
-        <section class="goal-block">
-          <div class="goal-header">
-            <span>${escapeHtml(c.name ?? "Goal")}</span>
-            <span class="goal-value">${latest ? `${latest.y}%` : "—"}</span>
-          </div>
-          ${(latest && latest.notes) ? `<div class="goal-note">Session note: ${latest.notes}</div>` : ""}
-          ${(c.notes) ? `<div class="goal-note goal-notes-block">Goal notes: ${c.notes}</div>` : ""}
-          ${buildQuartersMarkup(c)}
-        </section>
-      `;
-    }).join("");
-
-    const accMarkup = (student.accommodations ?? []).length
-      ? (student.accommodations ?? []).map((a, i) => `<div class="acc-item">${i + 1}. ${escapeHtml(a.name)}</div>`).join("")
-      : "<div class=\"empty\">No accommodations recorded.</div>";
-
-    // Reuses the same print-document builder (and its CSS) as every other print path in the app
-    // (Parent Print, Print All attachments, bulk class reports) instead of keeping its own
-    // hand-rolled copy — a prior version of this function had its own duplicate <style> block that
-    // silently drifted out of sync with this one.
-    const html = `
-      <div class="report-page">
-        <div class="report">
-          <div class="report-header">
-            <div>
-              <div class="report-name">${escapeHtml(student.name)}</div>
-              <div class="report-meta">Progress Report · Generated ${today}</div>
-            </div>
-            <span class="badge"></span>
-          </div>
-          <div class="section">
-            <div class="section-title">Minutes</div>
-            ${minuteEntries.length ? `<div class="minutes-summary">${totalMinutes} minutes total${minuteSummary.length ? ` · ${minuteSummary.map(([label, total]) => `${label}: ${total} min`).join(" · ")}` : ""}</div>` : `<div class="empty">No minutes recorded</div>`}
-          </div>
-          ${goalMarkup}
-          <div class="section">
-            <div class="section-title">Accommodations</div>
-            ${accMarkup}
-          </div>
-          <div class="footer"><span>Progress Monitor</span><span>${today}</span></div>
-        </div>
-      </div>
-    `;
-
-    printHtmlDocument(html, `Progress Report - ${student.name}`);
+    window.print();
   };
   const bulkPrintReports = () => {
     if (!bulkSelectedStudentIds.length) return;

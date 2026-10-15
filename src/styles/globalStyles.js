@@ -58,7 +58,7 @@ css.textContent = `
   .spark-bar{border-radius:2px 2px 0 0;min-width:4px;transition:height .3s}
   @media print {
     @page {
-      size: A4 portrait;
+      size: letter portrait;
       margin: 0.5in;
     }
     html, body, #root, #root > div {
@@ -69,8 +69,22 @@ css.textContent = `
       height: auto !important;
       max-height: none !important;
     }
+    #root > div {
+      display: block !important;
+      width: 100% !important;
+    }
+    #root > div > :not(.report-print-overlay) {
+      display: none !important;
+    }
     body * { visibility: hidden !important; }
     .print-report, .print-report * { visibility: visible !important; }
+    .report-print-overlay {
+      position: static !important;
+      inset: auto !important;
+      display: block !important;
+      background: white !important;
+      backdrop-filter: none !important;
+    }
     .print-report {
       position: static !important;
       inset: auto !important;
@@ -86,10 +100,27 @@ css.textContent = `
       box-shadow: none !important;
       border-radius: 0 !important;
     }
-    .print-report > div,
-    .report-section {
+    .student-progress-report {
+      width: 100% !important;
+      max-width: 680px !important;
+      margin: 0 auto !important;
+      padding: 36px !important;
+      border: 2px solid var(--border) !important;
+      box-shadow: var(--shadow-lg) !important;
+      border-radius: var(--r-lg) !important;
+      animation: none !important;
+      transform: none !important;
+      print-color-adjust: exact !important;
+      -webkit-print-color-adjust: exact !important;
+    }
+    .print-report > div {
       break-inside: auto !important;
       page-break-inside: auto !important;
+      overflow: visible !important;
+    }
+    .student-progress-report .report-section {
+      break-inside: avoid !important;
+      page-break-inside: avoid !important;
       page-break-after: auto !important;
       overflow: visible !important;
     }
