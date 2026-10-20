@@ -11,6 +11,8 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
   const student=sets[selSet];
   const chart=student?.charts?.[selChart]??null;
   const pal=getPal(selSet);
+  const quarters = Array.isArray(chart?.quarters) ? chart.quarters : [];
+  const quartersSorted = quarters.slice().sort((a, b) => a.date.localeCompare(b.date));
 
   const [newVal,setNewVal]=useState("");
   const [newDate,setNewDate]=useState(todayStr);
@@ -21,6 +23,8 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
   const [editingQuarterId,setEditingQuarterId]=useState(null);
   const [editingQuarterVal,setEditingQuarterVal]=useState("");
   const [editingQuarterName,setEditingQuarterName]=useState("");
+  const [quarterOverviewId,setQuarterOverviewId]=useState(null);
+  const [quarterEntryDrafts,setQuarterEntryDrafts]=useState([]);
   const [quarterLogCollapsed,setQuarterLogCollapsed]=useState(false);
   const [flagPositions,setFlagPositions]=useState([]);
   const [hoveredFlagId,setHoveredFlagId]=useState(null);
@@ -57,7 +61,13 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
 
     if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
       const parsed = new Date(`${normalized}T12:00:00`);
-      return Number.isNaN(parsed.getTime()) ? null : normalized;
+      if (
+        Number.isNaN(parsed.getTime()) ||
+        parsed.getFullYear() !== Number(normalized.slice(0, 4)) ||
+        parsed.getMonth() + 1 !== Number(normalized.slice(5, 7)) ||
+        parsed.getDate() !== Number(normalized.slice(8, 10))
+      ) return null;
+      return normalized;
     }
 
     return parseDateDigits(normalized);
@@ -97,13 +107,17 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
   const thisMonthStr=`${viewYear}-${String(new Date().getMonth()+1).padStart(2,"0")}`;
   const monthPts=allPts.filter(p=>p.x?.startsWith(thisMonthStr));
   const streak=monthPts.length;
-
   const addPoint=useCallback((e,val,date,note)=>{
     const v=val??newVal, d=date??newDate, n=note??newNote;
     if(!v||!d||!chart) return;
     snap();
     upd(data=>{
-      data[selSet].charts[selChart].data.push({x:d,y:clamp(Number(v),0,100),notes:n});
+      data[selSet].charts[selChart].data.push({
+        logId:`log_${Date.now()}_${Math.random().toString(36).slice(2,9)}`,
+        x:d,
+        y:clamp(Number(v),0,100),
+        notes:n
+      });
       data[selSet].charts[selChart].data=sanitize(data[selSet].charts[selChart].data);
     });
     if(e?.clientX) burst(e.clientX,e.clientY);
@@ -117,7 +131,7 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
   const saveEditPt=()=>{
     if(!editPt) return; snap();
     upd(d=>{
-      d[selSet].charts[selChart].data[editPt.idx]={x:editPt.x,y:clamp(Number(editPt.y),0,100),notes:editPt.notes};
+      d[selSet].charts[selChart].data[editPt.idx]={logId:editPt.logId,x:editPt.x,y:clamp(Number(editPt.y),0,100),notes:editPt.notes};
       d[selSet].charts[selChart].data=sanitize(d[selSet].charts[selChart].data);
     });
     setEditPt(null);
@@ -137,10 +151,14 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
   // ─── Quarter markers ────────────────────────────────────────────────────
   // A "quarter" is a snapshot: the date it was marked, plus the average of every data
   // point since the previous quarter marker (or the beginning of the data, if this is the
-  // first one) through that date. Averages can be hand-edited later; the underlying data
-  // points are never modified.
-  const quarters = Array.isArray(chart?.quarters) ? chart.quarters : [];
-  const quartersSorted = quarters.slice().sort((a, b) => a.date.localeCompare(b.date));
+  // first one) through that date. The points stay on the chart, while their editable copies
+  // are stored with the quarter and hidden from the active session log.
+  const latestQuarterDate=quartersSorted.length ? quartersSorted[quartersSorted.length-1].date : null;
+  const archivedLogIds=new Set(quarters.flatMap(q=>(Array.isArray(q.entries)?q.entries:[]).map(entry=>entry.logId).filter(Boolean)));
+  const activePts=pts.filter(point=>
+    (!latestQuarterDate || point.x>latestQuarterDate) &&
+    (!point.logId || !archivedLogIds.has(point.logId))
+  );
 
   // Force an immediate canvas redraw whenever the quarter markers actually change content
   // (added, edited, or deleted) — otherwise the vertical line/flag can lag a render behind
@@ -161,24 +179,119 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
     }
 
     const prevDate = quartersSorted.length ? quartersSorted[quartersSorted.length - 1].date : null;
-    const matched = allPts.filter(p => (!prevDate || p.x > prevDate) && p.x <= today);
+    const matched = allPts
+      .map((point,index)=>({point,index}))
+      .filter(({point})=>(!prevDate || point.x > prevDate) && point.x <= today);
     const avg = matched.length
-      ? Math.round((matched.reduce((sum, p) => sum + Number(p.y), 0) / matched.length) * 10) / 10
+      ? Math.round((matched.reduce((sum, {point}) => sum + Number(point.y), 0) / matched.length) * 10) / 10
       : null;
+    const entries=matched.map(({point})=>({...point,logId:point.logId||`log_${Date.now()}_${Math.random().toString(36).slice(2,9)}`}));
 
     snap();
     upd(d => {
       const c = d[selSet].charts[selChart];
       if (!Array.isArray(c.quarters)) c.quarters = [];
 
+      matched.forEach(({index},entryIndex)=>{
+        c.data[index]={...c.data[index],logId:entries[entryIndex].logId};
+      });
       c.quarters.push({
         id: `q_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
         date: today,
         name: `Quarter ${quartersSorted.length + 1}`,
         avg,
-        count: matched.length
+        count: matched.length,
+        entries
       });
     });
+  };
+
+  const openQuarterOverview = quarter => {
+    const previousQuarter=quartersSorted
+      .filter(item=>item.date<quarter.date)
+      .at(-1);
+    const indexedEntries=Array.isArray(quarter.entries)
+      ? quarter.entries.map(entry=>({
+          point:entry,
+          index:allPts.findIndex(point=>point.logId && point.logId===entry.logId)
+        }))
+      : allPts
+        .map((point,index)=>({point,index}))
+        .filter(({point})=>(!previousQuarter || point.x>previousQuarter.date) && point.x<=quarter.date);
+    const entriesWithIds=indexedEntries.map(({point})=>({
+        ...point,
+        logId:point.logId||`log_${Date.now()}_${Math.random().toString(36).slice(2,9)}`
+      }));
+
+    snap();
+    upd(data=>{
+      const c=data[selSet].charts[selChart];
+      indexedEntries.forEach(({index},entryIndex)=>{
+        if (index>=0) c.data[index]={...c.data[index],logId:entriesWithIds[entryIndex].logId};
+      });
+      c.quarters=(c.quarters??[]).map(item=>item.id===quarter.id
+        ? {...item,entries:entriesWithIds,count:entriesWithIds.length}
+        : item
+      );
+    });
+    setQuarterEntryDrafts(entriesWithIds.map((entry,index)=>({
+      logId:entry.logId,
+      sourceIndex:indexedEntries[index]?.index??-1,
+      x:entry.x||"",
+      y:String(entry.y??""),
+      notes:entry.notes||""
+    })));
+    setQuarterOverviewId(quarter.id);
+  };
+
+  const saveQuarterEntries = () => {
+    const quarter=quarters.find(item=>item.id===quarterOverviewId);
+    if (!quarter) return;
+    const invalidEntry=quarterEntryDrafts.find(entry=>
+      !parseDateInput(entry.x) ||
+      !entry.y.trim() ||
+      !Number.isFinite(Number(entry.y)) ||
+      Number(entry.y)<0 ||
+      Number(entry.y)>100
+    );
+    if (invalidEntry) {
+      alert("Each session needs a valid date and an accuracy between 0 and 100.");
+      return;
+    }
+    const entries=quarterEntryDrafts.map(entry=>({
+      logId:entry.logId,
+      x:entry.x,
+      y:Number(entry.y),
+      notes:entry.notes
+    })).sort((a,b)=>a.x.localeCompare(b.x));
+    const avg=entries.length
+      ? Math.round((entries.reduce((sum,entry)=>sum+entry.y,0)/entries.length)*10)/10
+      : null;
+
+    snap();
+    upd(data=>{
+      const c=data[selSet].charts[selChart];
+      const entriesById=new Map(entries.map(entry=>[entry.logId,entry]));
+      const quarterLogIds=new Set((quarter.entries??[]).map(entry=>entry.logId).filter(Boolean));
+      const entriesByIndex=new Map(quarterEntryDrafts
+        .filter(entry=>entry.sourceIndex>=0 && entriesById.has(entry.logId))
+        .map(entry=>[entry.sourceIndex,entriesById.get(entry.logId)]));
+      const sourceIndices=new Set(quarterEntryDrafts.map(entry=>entry.sourceIndex).filter(index=>index>=0));
+      c.data=sanitize(c.data
+        .map((point,index)=>{
+          const entry=entriesById.get(point.logId) || entriesByIndex.get(index);
+          if (entry) return {...point,...entry};
+          if (quarterLogIds.has(point.logId) || sourceIndices.has(index)) return null;
+          return point;
+        })
+        .filter(Boolean));
+      c.quarters=(c.quarters??[]).map(item=>item.id===quarterOverviewId
+        ? {...item,entries,count:entries.length,avg,manual:false}
+        : item
+      );
+    });
+    setQuarterOverviewId(null);
+    setQuarterEntryDrafts([]);
   };
 
   const startEditQuarter = q => { setEditingQuarterId(q.id); setEditingQuarterVal(q.avg ?? ""); setEditingQuarterName(q.name ?? ""); };
@@ -594,11 +707,18 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
                       </>
                     ) : (
                       <>
-                        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:6}}>
-                          <div style={{fontWeight:700,fontSize:12,color:theme.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}} title={q.name||q.date}>🏁 {q.name || q.date}</div>
-                          <span style={{fontFamily:"var(--font-head)",fontWeight:900,fontSize:14,color:pal.chip,flexShrink:0}}>{q.avg!=null?`${q.avg}%`:"—"}</span>
-                        </div>
-                        <div style={{fontSize:10,color:"var(--ink-soft)"}}>{q.date} · {q.count} {q.count===1?"entry":"entries"}{q.manual?" · edited":""}</div>
+                        <button
+                          onClick={()=>openQuarterOverview(q)}
+                          title="Open quarter overview"
+                          style={{display:"flex",flexDirection:"column",width:"100%",padding:0,border:0,background:"transparent",textAlign:"left",cursor:"pointer",gap:5}}
+                        >
+                          <span style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:6,width:"100%"}}>
+                            <span style={{fontWeight:700,fontSize:12,color:theme.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>🏁 {q.name || q.date}</span>
+                            <span style={{fontFamily:"var(--font-head)",fontWeight:900,fontSize:14,color:pal.chip,flexShrink:0}}>{q.avg!=null?`${q.avg}%`:"—"}</span>
+                          </span>
+                          <span style={{fontSize:10,color:"var(--ink-soft)"}}>{q.date} · {q.count} {q.count===1?"entry":"entries"}{q.manual?" · edited":""}</span>
+                          <span style={{fontSize:10,color:pal.chip,fontWeight:700}}>View quarter overview ›</span>
+                        </button>
                         <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
                           <button onClick={()=>startEditQuarter(q)} title="Edit name or percentage" style={{background:"none",border:"none",cursor:"pointer",fontSize:12,opacity:.6}}>✏️</button>
                           <button onClick={()=>deleteQuarter(q)} title="Delete this quarter line and average" style={{background:"none",border:"none",cursor:"pointer",fontSize:12,opacity:.6,color:"var(--red)"}}>🗑️</button>
@@ -665,20 +785,19 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
           <div style={{background:theme.card,borderRadius:"var(--r-lg)",border:`2px solid ${theme.border}`,padding:"18px",boxShadow:`0 8px 20px ${theme.shadow}`,flex:1,display:"flex",flexDirection:"column"}}>
             <div style={{fontFamily:"var(--font-head)",fontWeight:800,fontSize:14,marginBottom:12,color:theme.text}}>📋 Session Log</div>
             <div style={{flex:1,minHeight:0,overflowY:"auto"}}>
-              {pts.length===0?(
+              {activePts.length===0?(
                 <div style={{textAlign:"center",padding:"24px 0",color:"var(--ink-soft)",fontSize:13}}>
-                  <div style={{fontSize:30,marginBottom:6}}>🌱</div>No sessions in {viewYear} yet!
+                  <div style={{fontSize:30,marginBottom:6}}>🌱</div>{latestQuarterDate && pts.length>0 ? "No unarchived sessions yet!" : `No sessions in ${viewYear} yet!`}
                 </div>
-              ):[...pts].reverse().map((pt,i)=>{
-                const realIdx=pts.length-1-i;
+              ):[...activePts].reverse().map((pt,i)=>{
                 return(
-                  <div key={i} className="log-row">
+                  <div key={pt.logId||`${pt.x}-${i}`} className="log-row">
                     <div style={{width:44,textAlign:"right",fontFamily:"var(--font-head)",fontWeight:900,fontSize:14,color:pal.chip,flexShrink:0}}>{pt.y}%</div>
                     <div style={{flex:1,overflow:"hidden"}}>
                       <div style={{fontSize:12,fontWeight:600}}>{pt.x}</div>
                       {pt.notes&&<div style={{fontSize:11,color:theme.subtle,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{pt.notes}</div>}
                     </div>
-                    <button className="ghost-btn" onClick={()=>setEditPt({idx:allPts.indexOf(pt),x:pt.x,y:pt.y,notes:pt.notes||""})} style={{padding:"3px 8px",fontSize:11}}>Edit</button>
+                    <button className="ghost-btn" onClick={()=>setEditPt({idx:allPts.indexOf(pt),logId:pt.logId,x:pt.x,y:pt.y,notes:pt.notes||""})} style={{padding:"3px 8px",fontSize:11}}>Edit</button>
                     <button className="ghost-btn" onClick={()=>setPointToDelete(allPts.indexOf(pt))} style={{padding:"3px 8px",fontSize:11,color:"#ef4444",borderColor:"#ef4444"}}>Delete</button>
                   </div>
                 );
@@ -696,6 +815,58 @@ function GoalsTab({sets,selSet,selChart,setSelChart,upd,snap,undo,history,showAt
             <button className="action-btn" onClick={()=>deletePointAtIndex(pointToDelete)} style={{background:"var(--red)",color:"#fff"}}>Delete</button>
           </div>
         </div>
+      </Modal>
+
+      <Modal
+        show={quarterOverviewId!==null}
+        onClose={()=>{setQuarterOverviewId(null);setQuarterEntryDrafts([]);}}
+        title={quarters.find(q=>q.id===quarterOverviewId)?.name||"Quarter Overview"}
+        emoji="🏁"
+        wide
+      >
+        {(() => {
+          const quarter=quarters.find(q=>q.id===quarterOverviewId);
+          if (!quarter) return null;
+          return (
+            <div style={{display:"flex",flexDirection:"column",gap:14}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,padding:"10px 12px",borderRadius:10,background:theme.softPanel}}>
+                <div>
+                  <div style={{fontSize:12,color:theme.subtle}}>Quarter ended {quarter.date}</div>
+                  <div style={{fontSize:12,color:theme.subtle,marginTop:3}}>{quarterEntryDrafts.length} session {quarterEntryDrafts.length===1?"entry":"entries"}</div>
+                </div>
+                <div style={{fontFamily:"var(--font-head)",fontWeight:900,fontSize:22,color:pal.chip}}>{quarter.avg!=null?`${quarter.avg}%`:"No data"}</div>
+              </div>
+              <div style={{fontSize:12,color:theme.subtle}}>Edit the session records below. Saving updates the quarter average and the goal chart history.</div>
+              {quarterEntryDrafts.length===0 ? (
+                <div style={{textAlign:"center",padding:"22px 12px",color:theme.subtle,background:theme.softPanel,borderRadius:10}}>No session entries were recorded for this quarter.</div>
+              ) : (
+                <div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:"48vh",overflowY:"auto"}}>
+                  {quarterEntryDrafts.map((entry,index)=>(
+                    <div key={entry.logId} style={{display:"grid",gridTemplateColumns:"minmax(130px, .8fr) minmax(90px, .5fr) minmax(150px, 1.5fr) auto",alignItems:"end",gap:8,padding:"10px",border:`1px solid ${theme.border}`,borderRadius:10,background:theme.card}}>
+                      <label style={{fontSize:11,color:theme.subtle}}>
+                        Date
+                        <input type="date" value={entry.x} onChange={event=>setQuarterEntryDrafts(items=>items.map((item,i)=>i===index?{...item,x:event.target.value}:item))} style={{display:"block",width:"100%",marginTop:4,fontSize:12}}/>
+                      </label>
+                      <label style={{fontSize:11,color:theme.subtle}}>
+                        Accuracy %
+                        <input type="number" min="0" max="100" value={entry.y} onChange={event=>setQuarterEntryDrafts(items=>items.map((item,i)=>i===index?{...item,y:event.target.value}:item))} style={{display:"block",width:"100%",marginTop:4,fontSize:12}}/>
+                      </label>
+                      <label style={{fontSize:11,color:theme.subtle}}>
+                        Session note
+                        <input type="text" value={entry.notes} onChange={event=>setQuarterEntryDrafts(items=>items.map((item,i)=>i===index?{...item,notes:event.target.value}:item))} style={{display:"block",width:"100%",marginTop:4,fontSize:12}}/>
+                      </label>
+                      <button className="ghost-btn" onClick={()=>setQuarterEntryDrafts(items=>items.filter((_,i)=>i!==index))} title="Remove this session from the quarter" style={{padding:"6px 8px",color:"var(--red)"}}>✕</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div style={{display:"flex",justifyContent:"flex-end",gap:8}}>
+                <button className="ghost-btn" onClick={()=>{setQuarterOverviewId(null);setQuarterEntryDrafts([]);}}>Cancel</button>
+                <button className="action-btn" onClick={saveQuarterEntries} style={{background:pal.chip,color:"#fff"}}>Save quarter entries</button>
+              </div>
+            </div>
+          );
+        })()}
       </Modal>
 
       {/* Quick Log Modal */}
