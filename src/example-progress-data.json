@@ -1,0 +1,225 @@
+{
+  "version": 2,
+  "themeKey": "sunrise",
+  "groups": [
+    { "id": "grade-5", "name": "Grade 5" },
+    { "id": "grade-6", "name": "Grade 6" }
+  ],
+  "minuteOptions": [
+    { "id": "reading", "label": "Reading" },
+    { "id": "math", "label": "Math" },
+    { "id": "writing", "label": "Writing" },
+    { "id": "speech", "label": "Speech" }
+  ],
+  "attendanceGroups": [
+    {
+      "id": "att-reading-club",
+      "name": "Reading Club",
+      "times": [
+        { "id": "reading-club-morning", "start": "09:00", "stop": "09:30" }
+      ],
+      "studentIds": ["student-jordan-rivera", "student-maya-chen"]
+    }
+  ],
+  "students": [
+    {
+      "sid": "student-jordan-rivera",
+      "name": "Jordan Rivera",
+      "emoji": "🦊",
+      "groupId": "grade-5",
+      "collapsed": false,
+      "accommodations": [
+        { "id": "jordan-audio", "name": "Audio directions" },
+        { "id": "jordan-preferential", "name": "Preferential seating" }
+      ],
+      "accDays": {
+        "2026-10-13": {
+          "jordan-audio": "given",
+          "jordan-preferential": "given",
+          "_note": "Small-group setting helped Jordan stay focused."
+        },
+        "2026-10-14": {
+          "jordan-audio": "given",
+          "jordan-preferential": "na",
+          "_explanations": { "jordan-preferential": "Independent assessment in a quiet room." }
+        }
+      },
+      "minutes": [
+        {
+          "id": "jordan-attendance-2026-10-14",
+          "kind": "attendance",
+          "date": "2026-10-14",
+          "groupId": "att-reading-club",
+          "groupName": "Reading Club",
+          "status": "late",
+          "start": "09:08",
+          "stop": "09:30",
+          "lateReason": "Bus arrived late.",
+          "sessionNote": "Library room was used today."
+        },
+        {
+          "id": "jordan-minutes-reading",
+          "optionId": "reading",
+          "label": "Reading",
+          "amount": 30
+        }
+      ],
+      "testing": [
+        {
+          "id": "jordan-test-fall-2026",
+          "name": "Reading Fluency Probe",
+          "date": "2026-10-02",
+          "scores": { "fall": 68 }
+        }
+      ],
+      "charts": [
+        {
+          "name": "Reading Fluency",
+          "startValue": 42,
+          "startDate": "2026-08-20",
+          "goalValue": 85,
+          "goalDate": "2027-05-20",
+          "notes": "Practice repeated reading with high-interest passages.",
+          "data": [
+            { "x": "2026-09-02", "y": 48, "notes": "Read the passage twice before timing." },
+            { "x": "2026-09-16", "y": 55, "notes": "Used a familiar topic." },
+            { "x": "2026-10-01", "y": 63, "notes": "Improved accuracy on the second attempt." },
+            { "x": "2026-10-14", "y": 68, "notes": "Maintained pace with fewer prompts." }
+          ],
+          "quarters": [
+            {
+              "id": "jordan-reading-q1",
+              "date": "2026-10-14",
+              "name": "Quarter 1",
+              "avg": 58.5,
+              "count": 4
+            }
+          ],
+          "attachments": []
+        },
+        {
+          "name": "Math Facts",
+          "startValue": 35,
+          "startDate": "2026-08-20",
+          "goalValue": 90,
+          "goalDate": "2027-05-20",
+          "notes": "Use a short visual warm-up before timed practice.",
+          "data": [
+            { "x": "2026-09-10", "y": 40, "notes": "Practiced doubles and near-doubles." },
+            { "x": "2026-10-08", "y": 52, "notes": "Fewer prompts needed." }
+          ],
+          "quarters": [],
+          "attachments": []
+        }
+      ],
+      "archives": [
+        {
+          "id": "jordan-archive-2026-06",
+          "archivedAt": "2026-06-12T15:30:00.000Z",
+          "snapshot": {
+            "name": "Jordan Rivera",
+            "accommodations": [
+              { "id": "jordan-old-audio", "name": "Audio directions" }
+            ],
+            "accDays": {
+              "2026-06-10": { "jordan-old-audio": "given" }
+            },
+            "minutes": [
+              {
+                "id": "jordan-old-attendance",
+                "kind": "attendance",
+                "date": "2026-06-10",
+                "groupId": "att-reading-club",
+                "groupName": "Reading Club",
+                "status": "attended",
+                "start": "09:00",
+                "stop": "09:30"
+              }
+            ],
+            "testing": [
+              {
+                "id": "jordan-test-spring-2026",
+                "name": "Reading Fluency Probe",
+                "date": "2026-05-28",
+                "scores": { "spring": 54 }
+              }
+            ],
+            "charts": [
+              {
+                "name": "Reading Fluency",
+                "startValue": 38,
+                "startDate": "2026-01-12",
+                "goalValue": 75,
+                "goalDate": "2026-06-12",
+                "notes": "Build confidence with familiar passages.",
+                "data": [
+                  { "x": "2026-02-02", "y": 43, "notes": "Started with a shorter passage." },
+                  { "x": "2026-04-08", "y": 49, "notes": "Steady improvement." },
+                  { "x": "2026-06-10", "y": 54, "notes": "Best score of the period." }
+                ],
+                "quarters": [],
+                "attachments": []
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "sid": "student-maya-chen",
+      "name": "Maya Chen",
+      "emoji": "🌼",
+      "groupId": "grade-6",
+      "collapsed": false,
+      "accommodations": [
+        { "id": "maya-breaks", "name": "Movement breaks" },
+        { "id": "maya-check-in", "name": "Adult check-in" }
+      ],
+      "accDays": {
+        "2026-10-14": {
+          "maya-breaks": "given",
+          "maya-check-in": "given",
+          "_note": "Maya requested a movement break after writing."
+        }
+      },
+      "minutes": [
+        {
+          "id": "maya-attendance-2026-10-14",
+          "kind": "attendance",
+          "date": "2026-10-14",
+          "groupId": "att-reading-club",
+          "groupName": "Reading Club",
+          "status": "attended",
+          "start": "09:00",
+          "stop": "09:30"
+        }
+      ],
+      "testing": [
+        {
+          "id": "maya-test-fall-2026",
+          "name": "Math Benchmark",
+          "date": "2026-09-30",
+          "scores": { "fall": 82 }
+        }
+      ],
+      "charts": [
+        {
+          "name": "Written Response",
+          "startValue": 3,
+          "startDate": "2026-08-25",
+          "goalValue": 8,
+          "goalDate": "2027-05-25",
+          "notes": "Use a planning organizer before drafting.",
+          "data": [
+            { "x": "2026-09-05", "y": 4, "notes": "Completed the organizer with one prompt." },
+            { "x": "2026-09-22", "y": 5, "notes": "Added supporting details independently." },
+            { "x": "2026-10-13", "y": 6, "notes": "Used transition words in the response." }
+          ],
+          "quarters": [],
+          "attachments": []
+        }
+      ],
+      "archives": []
+    }
+  ]
+}

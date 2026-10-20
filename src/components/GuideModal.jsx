@@ -30,9 +30,9 @@ function GuideModal({show,onClose}){
     ]},
     {emoji:"🏁",title:"Quarterly Tracking",body:[
       "📍 Press \"🏁 End Quarter\" to mark the end of a term",
-      "📊 It averages all entries since the last quarter and saves that average",
-      "📝 Click any quarter line to see the date and average",
-      "✏️ Rename quarterly records or edit percentages — the data stays the same",
+      "📊 It saves the average and moves the quarter's sessions out of the active Session Log",
+      "📝 Click a quarter under Quarterly Averages to review and edit its dates, scores, and notes",
+      "✏️ Editing quarter entries updates the saved average and chart history",
     ]},
     {emoji:"🛠",title:"Accommodations",body:[
       "📝 Press \"+ Setup\" to create your accommodation list (e.g. \"Preferential Seating\")",
